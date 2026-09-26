@@ -31,7 +31,7 @@ export function UpdatePanel() {
     return (
       <div className="update-panel">
         <span>Version {version} disponible sur le site.</span>
-        <button onClick={() => void run(() => window.api.openSite('/application'))}>Télécharger</button>
+        <button onClick={() => void run(() => window.api.openSite('/application/'))}>Télécharger</button>
       </div>
     )
   if (status === 'error')

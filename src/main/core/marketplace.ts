@@ -189,7 +189,10 @@ export class Marketplace {
     return { updates, gone }
   }
 
-  /** Adresse d'une page du site : même domaine que l'API (en développement, le serveur Vite sur le port 5173). */
+  /**
+   * Adresse d'une page du site : même domaine que l'API (en développement, le serveur Vite sur le port 5173). Les
+   * adresses officielles des pages se terminent par « / » (ex. /packs/bh-1960/) ; les autres passent par une redirection.
+   */
   siteUrl(sitePath: string): string {
     const site = this.apiUrl.replace(/\/api\/?$/, '').replace(/:8080$/, ':5173')
     return `${site}${sitePath}`

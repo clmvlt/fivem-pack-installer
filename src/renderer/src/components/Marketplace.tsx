@@ -309,7 +309,7 @@ function MarketDetail({ id, onBack, onOpenLocal }: { id: string; onBack: () => v
             )}
           </dl>
           <div className="side-links">
-            <button onClick={() => void run(() => window.api.openSite(`/packs/${pack.slug}`))}>Voir sur le site</button>
+            <button onClick={() => void run(() => window.api.openSite(`/packs/${pack.slug}/`))}>Voir sur le site</button>
           </div>
         </aside>
       </div>
