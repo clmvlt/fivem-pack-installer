@@ -66,12 +66,15 @@ La compilation et la publication se font sur GitHub (Actions, machines Windows) 
 - **CI** (`.github/workflows/ci.yml`) : à chaque push et pull request, typage, tests, puis installateur et version portable, téléchargeables dans les artefacts de l'exécution.
 - **Publication** (`.github/workflows/release.yml`) : poussez un tag `vX.Y.Z` identique à la version de `package.json`. Le workflow teste, compile, signe les fichiers, crée la release GitHub, puis met la version en ligne sur packs.dimzou.fr : les applications installées la téléchargent, la vérifient et l'installent seules.
 
+Une fois la nouvelle version committée dans `package.json` (et, si vous voulez, `notes/X.Y.Z.md`) :
+
 ```bash
-npm version 1.4.0 --no-git-tag-version   # ou modifier package.json
-git commit -am "Version 1.4.0"
-git tag v1.4.0
-git push && git push --tags
+npm run release                  # vérifie, pousse le tag vX.Y.Z et suit la publication jusqu'au bout
+npm run release -- --dry-run     # montre ce qui serait fait, sans rien pousser
+npm run release -- --no-watch    # pousse le tag sans attendre la fin
 ```
+
+Le script ne crée aucun commit. Il refuse de partir si des fichiers ne sont pas committés ou si la version est déjà publiée, pousse les commits pas encore envoyés, crée le tag, puis suit le workflow (GitHub CLI `gh`) et vérifie la release GitHub et packs.dimzou.fr.
 
 Nouveautés affichées sur le site et dans la release : `notes/X.Y.Z.md` s'il existe, sinon la liste des commits depuis le tag précédent.
 
@@ -87,7 +90,7 @@ Sans ces secrets, la release GitHub est créée mais la version n'est pas mise e
 
 ### Publication depuis un poste
 
-`deploy/deploy.py` fait la même chose en local (build, signature, envoi, publication) :
+`deploy/deploy.py` (`npm run release:local`) fait la même chose en local (build, signature, envoi, publication) :
 
 ```bash
 python -m pip install -r deploy/requirements.txt
