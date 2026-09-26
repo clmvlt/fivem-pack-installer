@@ -7,8 +7,18 @@ import { prepareSwapScript, swapCommand, swapEnvironment } from '../src/main/cor
 
 const dirs: string[] = []
 afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+  // Le script lancé en détaché peut encore tenir un fichier ouvert un court instant.
+  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 })
 })
+
+/** Contenu du fichier, ou null s'il est absent ou encore ouvert par le script (verrouillé sous Windows : EBUSY). */
+function readIfReady(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8')
+  } catch {
+    return null
+  }
+}
 
 async function sandbox(): Promise<{ dir: string; target: string; source: string; log: string; script: string }> {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'pm swap '))
@@ -66,7 +76,9 @@ describe.skipIf(process.platform !== 'win32')('remplacement de la version portab
     `
     const parent = spawn(process.execPath, ['-e', launcher], { stdio: 'ignore' })
     await new Promise((r) => parent.on('exit', r))
-    expect(await waitFor(() => existsSync(s.target) && readFileSync(s.target, 'utf8') === 'nouvelle version', 15_000)).toBe(true)
+    // Fin du script (journal), puis contenu : le fichier est illisible tant qu'il est en cours de copie.
+    expect(await waitFor(() => readIfReady(s.log)?.includes('nouvelle version en place') ?? false, 20_000)).toBe(true)
+    expect(await waitFor(() => readIfReady(s.target) === 'nouvelle version', 5_000)).toBe(true)
   })
 
   it('passe la demande de relance au script', () => {
