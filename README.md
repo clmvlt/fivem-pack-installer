@@ -38,6 +38,10 @@ Les mods installés à la main avant l'application apparaissent sur la carte « 
 
 `%LOCALAPPDATA%\FiveM Pack Manager\` : bibliothèque de packs (`Bibliotheque\`), `settings.json`, `state.json`, `logs\`, cache des images de la Marketplace (`Marketplace\`). Le dossier des packs peut être déplacé depuis « Réglages ». Un téléchargement interrompu reprend là où il s'était arrêté (`Bibliotheque\.downloads\`).
 
+## Confidentialité
+
+Aucun compte, aucune mesure d'audience, aucune donnée personnelle collectée. L'application ne communique qu'avec packs.dimzou.fr : peu après le démarrage puis toutes les heures pour chercher une mise à jour (sans identifiant), à l'ouverture de la Marketplace pour lister les packs, et quand vous téléchargez un pack ou une mise à jour. Comme pour tout site web, le serveur reçoit l'adresse IP de ces requêtes. `PM_NO_UPDATE=1` désactive la recherche de mises à jour.
+
 ## Développement
 
 ```bash
@@ -114,6 +118,12 @@ L'application n'installe une mise à jour que si la signature correspond à la c
 
 - Les archives protégées par mot de passe doivent être extraites avant.
 - Les packages OpenIV (`.oiv`) concernent GTA V solo et ne sont pas installés.
+
+## Signature du code
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Les fichiers publiés (installateur, version portable, exécutable de l'application) sont construits par GitHub Actions à partir de ce dépôt et d'un tag `vX.Y.Z`, puis signés après approbation manuelle. Auteurs, relecteurs et approbateurs : [clmvlt](https://github.com/clmvlt). Les composants d'autres projets (Electron, 7-Zip, unRAR) sont livrés tels que publiés par leurs auteurs. Politique complète : [packs.dimzou.fr/signature](https://packs.dimzou.fr/signature).
 
 ## Licence
 
