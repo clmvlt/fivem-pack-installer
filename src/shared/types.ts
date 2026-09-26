@@ -1,0 +1,340 @@
+// Types partagés entre le processus principal (Electron) et l'interface (React).
+
+/** Racines de destination gérées par l'application. */
+export type RootId = 'fivem' | 'gta'
+
+export const ROOT_LABELS: Record<RootId, string> = {
+  fivem: 'FiveM Application Data',
+  gta: 'Dossier GTA V'
+}
+
+/** Emplacement de destination : une racine + un chemin relatif (séparateur « / », '' = racine). */
+export interface Destination {
+  root: RootId
+  path: string
+}
+
+export type ComponentKind =
+  | 'mods' // .rpf chargés par FiveM depuis FiveM.app/mods
+  | 'plugins' // ReShade / ENB proxy / .asi dans FiveM.app/plugins
+  | 'citizen' // remplacement de fichiers FiveM (citizen/...)
+  | 'addons' // .rpf chargés depuis FiveM.app/addons (serveurs sans mode pur)
+  | 'fivem-root' // dossier « FiveM Application Data » complet
+  | 'gta-root' // fichiers à la racine de GTA V (config ENB, d3dcompiler_46e.dll...)
+  | 'file' // fichier isolé classé par son type
+  | 'docs' // documentation / aperçus, jamais installés
+  | 'unsupported' // contenu non installable (OpenIV .oiv, ScriptHookV...)
+  | 'unknown' // à assigner manuellement
+
+/**
+ * Un composant = un dossier (ou fichier) du pack auquel on associe une destination.
+ * Chaque fichier du pack est rattaché au composant dont la source est le plus long préfixe de son chemin.
+ */
+export interface PackComponent {
+  id: string
+  source: string
+  isFile: boolean
+  label: string
+  kind: ComponentKind
+  destination: Destination | null
+  suggested: Destination | null
+  enabled: boolean
+  optional: boolean
+  fileCount: number
+  size: number
+  reason: string
+}
+
+export interface PackFileEntry {
+  rel: string
+  size: number
+}
+
+/** Résultat d'une vérification de compatibilité FiveM sur un fichier du pack. */
+export interface Insight {
+  rel: string
+  level: 'ok' | 'info' | 'warn' | 'bad'
+  title: string
+  text: string
+  /** Builds du jeu déclarées par un .asi (FX_ASI_BUILD). */
+  builds?: number[]
+}
+
+export interface PackManifest {
+  schema: 1
+  id: string
+  name: string
+  sourceArchive: string
+  importedAt: string
+  updatedAt: string
+  contentSize: number
+  fileCount: number
+  components: PackComponent[]
+  features: string[]
+  warnings: string[]
+  /** Image principale (chemin relatif au dossier du pack), choisie par l'utilisateur ou automatiquement. */
+  cover: string | null
+  /** Images d'aperçu fournies dans le pack (chemins relatifs au dossier du pack). */
+  gallery: string[]
+  notes: string
+  /** Pack créé à partir d'une installation manuelle existante. */
+  captured: boolean
+  /** Suppression en cours. */
+  deleting?: boolean
+  /** Réglages modifiés en jeu et conservés (fichiers dans user/). */
+  userConfigCount: number
+  insights: Insight[]
+  insightsVersion?: number
+  /** Version de ReShade fournie par le pack (null si aucune). */
+  reshadeVersion: string | null
+  /** Presets ReShade du pack (chemins relatifs au contenu). */
+  reshadePresets?: string[]
+  /** Preset chargé par ReShade à chaque installation du pack. */
+  reshadePreset?: string | null
+  /** Pack téléchargé depuis la Marketplace. */
+  marketplace?: MarketplaceLink
+  /** Description (Markdown) fournie par la Marketplace. */
+  description?: string
+  author?: string
+}
+
+/** Lien entre un pack de la bibliothèque et sa fiche sur la Marketplace. */
+export interface MarketplaceLink {
+  id: string
+  slug: string
+  /** Empreinte de l'archive installée : une autre empreinte en ligne signale une mise à jour. */
+  sha256: string
+  version: string
+  downloadedAt: string
+}
+
+/** Fichier réellement présent dans les dossiers du jeu, installé par l'application. */
+export interface InstalledFile {
+  root: RootId
+  path: string
+  size: number
+  mtimeMs: number
+  linked: boolean
+  /** Source dans la bibliothèque (relative au dossier du pack). */
+  source: string
+}
+
+export interface ActiveInstall {
+  id: string
+  packId: string
+  packName: string
+  appliedAt: string
+  roots: Record<RootId, string>
+  files: InstalledFile[]
+  createdDirs: Destination[]
+  /** Fichiers qui n'ont pas pu être retirés lors d'une désinstallation précédente. */
+  partial: boolean
+}
+
+export interface HistoryEntry {
+  at: string
+  action: 'apply' | 'remove' | 'capture' | 'clean' | 'restore' | 'import' | 'delete' | 'cache' | 'graphics' | 'download'
+  packName?: string
+  summary: string
+  ok: boolean
+}
+
+export interface AppState {
+  schema: 1
+  active: ActiveInstall | null
+  history: HistoryEntry[]
+}
+
+export interface Settings {
+  libraryDir: string
+  fivemPath: string | null
+  gtaPath: string | null
+}
+
+// ---------------------------------------------------------------------------
+// Détection des jeux
+
+export type GtaEdition = 'legacy' | 'enhanced' | 'unknown'
+export type GtaStore = 'rockstar' | 'steam' | 'epic' | 'unknown'
+
+export interface Check {
+  label: string
+  ok: boolean
+  detail?: string
+}
+
+export interface FiveMInfo {
+  path: string | null
+  source: string
+  valid: boolean
+  writable: boolean
+  checks: Check[]
+  gtaPathFromIni: string | null
+  buildNumber: string | null
+}
+
+export interface GtaInfo {
+  path: string | null
+  source: string
+  valid: boolean
+  writable: boolean
+  checks: Check[]
+  edition: GtaEdition
+  store: GtaStore
+  version: string | null
+}
+
+export interface GameCandidate {
+  path: string
+  source: string
+}
+
+export interface GamesInfo {
+  fivem: FiveMInfo
+  gta: GtaInfo
+  gtaCandidates: GameCandidate[]
+  fivemCandidates: GameCandidate[]
+  /** Le dossier GTA configuré dans FiveM (CitizenFX.ini) diffère du dossier GTA utilisé. */
+  mismatch: boolean
+  runningProcesses: string[]
+}
+
+// ---------------------------------------------------------------------------
+// Fichiers « étrangers » (mods installés à la main, hors application)
+
+export type ForeignCategory =
+  | 'enb'
+  | 'reshade'
+  | 'proxy-dll'
+  | 'asi'
+  | 'rpf'
+  | 'plugin-config'
+  | 'plugin-data'
+  | 'sp-loader'
+  | 'screenshot'
+  | 'log'
+  | 'other'
+
+export interface ForeignItem {
+  root: RootId
+  path: string
+  isDir: boolean
+  size: number
+  fileCount: number
+  category: ForeignCategory
+  label: string
+  /** Sélectionné par défaut pour la capture / le nettoyage. */
+  recommended: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Tâches longues
+
+export interface TaskProgress {
+  taskId: string
+  kind: 'import' | 'apply' | 'remove' | 'delete' | 'stash' | 'clean' | 'cache' | 'screenshots' | 'trash' | 'move-library' | 'download'
+  title: string
+  phase: string
+  current: number
+  total: number
+  detail?: string
+  done: boolean
+  ok?: boolean
+  error?: string
+  result?: unknown
+}
+
+export interface Overview {
+  settings: Settings
+  games: GamesInfo
+  state: AppState
+  library: PackManifest[]
+  /** Mods installés à la main, hors pack actif. */
+  foreign: { files: number; size: number } | null
+  /** Couleur d'accent de Windows (#rrggbb). */
+  accent: string
+  version: string
+  dataDir: string
+  /** Adresse de l'API de la Marketplace. */
+  apiUrl: string
+  /** Packs de la bibliothèque dont une nouvelle version est en ligne, et ceux retirés de la Marketplace. */
+  market: { updates: string[]; gone: string[] }
+  update: UpdateState
+}
+
+export interface ComponentPatch {
+  id: string
+  destination?: Destination | null
+  enabled?: boolean
+}
+
+export interface PackPatch {
+  name?: string
+  notes?: string
+  components?: ComponentPatch[]
+  resetComponents?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Marketplace
+
+export interface MarketImage {
+  id: string
+  width: number
+  height: number
+}
+
+export interface MarketPack {
+  id: string
+  slug: string
+  name: string
+  summary: string
+  author: string
+  version: string
+  tags: string[]
+  archiveSize: number
+  sha256: string
+  downloadCount: number
+  publishedAt: string | null
+  updatedAt: string
+  archiveUpdatedAt: string | null
+  cover: MarketImage | null
+  /** Pack correspondant dans la bibliothèque (null s'il n'a pas été téléchargé). */
+  localId: string | null
+  /** La version en ligne diffère de celle de la bibliothèque. */
+  updateAvailable: boolean
+}
+
+export interface MarketPackDetail extends MarketPack {
+  description: string
+  archiveName: string
+  images: MarketImage[]
+}
+
+export interface MarketPage {
+  items: MarketPack[]
+  page: number
+  total: number
+  totalPages: number
+}
+
+export interface MarketTag {
+  tag: string
+  count: number
+}
+
+// ---------------------------------------------------------------------------
+// Mises à jour de l'application
+
+export interface UpdateState {
+  status: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'verifying' | 'ready' | 'error' | 'unsupported'
+  version?: string
+  notes?: string
+  percent?: number
+  error?: string
+  /** La nouvelle version se télécharge sur le site (application lancée depuis ses sources, dossier non modifiable). */
+  manual?: boolean
+  /** installateur, version portable, ou lancée depuis les sources. */
+  mode?: 'installer' | 'portable' | 'source'
+  checkedAt?: string
+}

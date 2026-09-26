@@ -1,0 +1,2 @@
+# Dépendance de deploy/deploy.py : python -m pip install -r deploy/requirements.txt
+requests>=2.31

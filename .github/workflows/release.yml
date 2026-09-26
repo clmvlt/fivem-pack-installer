@@ -1,0 +1,120 @@
+# Publication d'une version : poussez un tag vX.Y.Z identique à la version de package.json.
+#
+#   1. tests puis compilation de l'installateur et de la version portable ;
+#   2. signature Ed25519 de chaque fichier (secret PM_SIGNING_KEY : contenu du fichier .pem de la clé de publication) ;
+#   3. release GitHub avec les fichiers et leurs signatures ;
+#   4. mise en ligne sur packs.dimzou.fr (secrets PACKS_ADMIN_USER et PACKS_ADMIN_PASSWORD) : les applications
+#      installées la téléchargent, la vérifient et l'installent seules.
+#
+# Sans les secrets, la release GitHub est créée sans signatures et la version n'est pas mise en ligne sur le site.
+# Nouveautés : notes/X.Y.Z.md s'il existe, sinon la liste des commits depuis le tag précédent.
+name: Publication
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publication de ${{ github.ref_name }}
+    runs-on: windows-latest
+    env:
+      HAS_SIGNING_KEY: ${{ secrets.PM_SIGNING_KEY != '' }}
+      HAS_ADMIN: ${{ secrets.PACKS_ADMIN_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Le tag correspond à package.json
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne '${{ github.ref_name }}') {
+            throw "Le tag ${{ github.ref_name }} ne correspond pas à la version $version de package.json."
+          }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Dépendances
+        run: npm ci
+
+      - name: Typage et tests
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Installateur et version portable
+        run: npm run dist
+
+      - name: Nouveautés
+        shell: pwsh
+        run: |
+          $file = "notes/$env:VERSION.md"
+          if (-not (Test-Path $file)) {
+            $previous = git describe --tags --abbrev=0 '${{ github.ref_name }}^' 2>$null
+            $range = if ($previous) { "$previous..${{ github.ref_name }}" } else { '${{ github.ref_name }}' }
+            $lines = git log --no-merges --pretty='- %s' $range
+            New-Item -ItemType Directory -Force notes | Out-Null
+            Set-Content -LiteralPath $file -Value ($lines -join "`n") -Encoding utf8
+          }
+          "NOTES_FILE=$file" >> $env:GITHUB_ENV
+
+      - name: Clé de signature
+        if: env.HAS_SIGNING_KEY == 'true'
+        shell: pwsh
+        env:
+          KEY: ${{ secrets.PM_SIGNING_KEY }}
+        run: |
+          $path = Join-Path $env:RUNNER_TEMP 'release-signing-key.pem'
+          Set-Content -LiteralPath $path -Value $env:KEY -NoNewline
+          "PM_SIGNING_KEY=$path" >> $env:GITHUB_ENV
+
+      - name: Signatures
+        if: env.HAS_SIGNING_KEY == 'true'
+        run: |
+          node scripts/sign-release.mjs release/FiveM-Pack-Manager-Setup-${{ env.VERSION }}.exe
+          node scripts/sign-release.mjs release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
+
+      - name: Release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FiveM Pack Manager ${{ env.VERSION }}
+          body_path: ${{ env.NOTES_FILE }}
+          files: |
+            release/FiveM-Pack-Manager-Setup-${{ env.VERSION }}.exe
+            release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
+            release/*.sig
+
+      - name: Mise en ligne sur packs.dimzou.fr
+        if: env.HAS_SIGNING_KEY == 'true' && env.HAS_ADMIN == 'true'
+        env:
+          PACKS_ADMIN_USER: ${{ secrets.PACKS_ADMIN_USER || 'admin' }}
+          PACKS_ADMIN_PASSWORD: ${{ secrets.PACKS_ADMIN_PASSWORD }}
+        run: |
+          python -m pip install -r deploy/requirements.txt
+          python deploy/deploy.py --no-build --notes-file ${{ env.NOTES_FILE }}
+
+      - name: Secrets manquants
+        if: env.HAS_SIGNING_KEY != 'true' || env.HAS_ADMIN != 'true'
+        run: echo "::warning::Secrets PM_SIGNING_KEY ou PACKS_ADMIN_PASSWORD absents : release GitHub créée, mais la version n'est pas mise en ligne sur packs.dimzou.fr."
+
+      - name: Nettoyage de la clé
+        if: always()
+        shell: pwsh
+        run: Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'release-signing-key.pem') -Force -ErrorAction SilentlyContinue

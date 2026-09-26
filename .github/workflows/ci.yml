@@ -1,0 +1,47 @@
+# Vérification et compilation à chaque push et pull request : typage, tests, puis installateur et version portable
+# (téléchargeables dans les artefacts de l'exécution). Les machines Windows de GitHub n'ont pas Smart App Control :
+# l'installateur NSIS s'y construit sans problème.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Tests et compilation (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Dépendances
+        run: npm ci
+
+      - name: Typage
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm test
+
+      - name: Installateur et version portable
+        run: npm run dist
+
+      - name: Artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: fivem-pack-manager-${{ github.sha }}
+          path: |
+            release/*.exe
+          if-no-files-found: error
+          retention-days: 14

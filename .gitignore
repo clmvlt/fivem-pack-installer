@@ -1,0 +1,25 @@
+node_modules/
+out/
+release/
+packs/
+*.log
+
+# Signatures des versions (copiées dans l'administration du site)
+release/*.sig
+
+# Publication : configuration locale (mots de passe) et envois en cours
+deploy/deploy.env
+deploy/.uploads.json
+deploy/.venv/
+__pycache__/
+
+# Propres à ce poste : raccourci Windows et réglages locaux de Claude Code
+*.lnk
+.claude/
+
+# Secrets : jamais versionnés (seuls les modèles *.example le sont)
+.env
+*.env
+!*.env.example
+*.pem
+*.key

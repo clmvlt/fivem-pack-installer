@@ -1,0 +1,34 @@
+appId: fr.fivem.packmanager
+productName: FiveM Pack Manager
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - '!packs/**'
+  - '!node_modules/7zip-bin/{mac,linux}/**'
+  - '!node_modules/7zip-bin/win/{ia32,arm64}/**'
+asarUnpack:
+  - node_modules/7zip-bin/**
+  - node_modules/node-unrar-js/**/*.wasm
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: resources/icon.png
+  requestedExecutionLevel: asInvoker
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: FiveM-Pack-Manager-Setup-${version}.${ext}
+portable:
+  artifactName: FiveM-Pack-Manager-Portable-${version}.${ext}
+# Génère resources/app-update.yml, lu par electron-updater. Les fichiers sont publiés à la main dans
+# l'administration du site (Versions de l'app), après signature (scripts/sign-release.mjs).
+publish:
+  provider: generic
+  url: https://packs.dimzou.fr/api/app/updates

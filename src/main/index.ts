@@ -1,0 +1,195 @@
+import os from 'node:os'
+import path from 'node:path'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, ipcMain, Menu, nativeTheme, net, protocol, screen, session, shell } from 'electron'
+import { IPC } from '@shared/api'
+import { EXEC_FLAG, runElevatedWorker } from './core/elevation'
+import { Service } from './service'
+import { isInside } from './util/fsx'
+import { log } from './util/log'
+
+const isElevatedWorker = process.argv.some((a) => a.startsWith(EXEC_FLAG))
+
+if (isElevatedWorker) {
+  // Processus administrateur éphémère : exécute un plan puis quitte, sans fenêtre.
+  app.setPath('userData', path.join(os.tmpdir(), 'fivem-pack-manager-elevated'))
+  app.disableHardwareAcceleration()
+  void app.whenReady().then(async () => {
+    const code = await runElevatedWorker(process.argv)
+    app.exit(code)
+  })
+} else {
+  startApp()
+}
+
+function startApp(): void {
+  const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
+  // PM_DATA_DIR : dossier de données alternatif (tests, installation portable).
+  const dataDir = process.env.PM_DATA_DIR || path.join(localAppData, 'FiveM Pack Manager')
+  app.setPath('userData', path.join(dataDir, 'app'))
+  log.init(path.join(dataDir, 'logs'))
+
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+    return
+  }
+
+  protocol.registerSchemesAsPrivileged([{ scheme: 'pm-media', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+
+  // Adresse de l'API (Marketplace et mises à jour) : production, sauf en développement (npm run dev) où l'API
+  // tourne sur le poste. PM_API_URL force une autre adresse (tests).
+  const devServer = !app.isPackaged && !!process.env.ELECTRON_RENDERER_URL
+  const apiUrl = (process.env.PM_API_URL || (devServer ? 'http://192.168.1.13:8080/api' : 'https://packs.dimzou.fr/api')).replace(/\/+$/, '')
+
+  let win: BrowserWindow | null = null
+  const service = new Service(dataDir, () => win, apiUrl)
+
+  app.on('second-instance', () => {
+    if (win) {
+      if (win.isMinimized()) win.restore()
+      win.focus()
+    }
+  })
+
+  app.on('window-all-closed', () => app.quit())
+
+  void app.whenReady().then(async () => {
+    await service.init()
+    log.info(`Démarrage v${app.getVersion()}, données : ${dataDir}`)
+
+    // Images des packs : pm-media://pack/<id>/<chemin>, limité au dossier de la bibliothèque.
+    // Images de la Marketplace : pm-media://market/<pack>/<image>[?size=thumb], mises en cache sur le disque.
+    protocol.handle('pm-media', (req) => {
+      const url = new URL(req.url)
+      const parts = url.pathname.split('/').filter(Boolean).map((p) => decodeURIComponent(p))
+      if (url.host === 'market') {
+        if (parts.length !== 2) return new Response('Interdit', { status: 403 })
+        return service.marketplace.image(parts[0], parts[1], url.searchParams.get('size') === 'thumb')
+      }
+      const lib = service.library.dir
+      const file = path.resolve(lib, ...parts)
+      if (url.host !== 'pack' || !isInside(lib, file) || !/\.(png|jpe?g|webp|gif|bmp)$/i.test(file)) return new Response('Interdit', { status: 403 })
+      return net.fetch(pathToFileURL(file).toString())
+    })
+
+    if (app.isPackaged) {
+      session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
+        cb({
+          responseHeaders: {
+            ...details.responseHeaders,
+            'Content-Security-Policy': [
+              "default-src 'self'; img-src 'self' pm-media: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+            ]
+          }
+        })
+      })
+    }
+
+    ipcMain.handle(IPC.invoke, async (_e, method: string, args: unknown[]) => {
+      const fn = (service.api as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method]
+      if (typeof fn !== 'function') throw new Error(`Méthode inconnue : ${method}`)
+      try {
+        return await fn(...args)
+      } catch (err) {
+        log.warn(`${method} : ${(err as Error).message}`)
+        throw err
+      }
+    })
+
+    Menu.setApplicationMenu(null)
+    win = createWindow(path.join(dataDir, 'window.json'))
+    service.startBackground()
+    nativeTheme.on('updated', () => win?.setBackgroundColor(windowBackground()))
+  })
+}
+
+interface Bounds {
+  x?: number
+  y?: number
+  width: number
+  height: number
+  maximized?: boolean
+  /** Version du format : une taille enregistrée avant la version 2 était l'ancienne taille par défaut, plus petite. */
+  v?: number
+}
+
+const DEFAULT_SIZE = { width: 1120, height: 780 }
+
+/** Même fond que l'interface (noir en thème sombre) : pas d'éclair gris à l'ouverture. */
+function windowBackground(): string {
+  return nativeTheme.shouldUseDarkColors ? '#000000' : '#f3f3f3'
+}
+
+/** Taille enregistrée à la fermeture ; sinon la taille par défaut, réduite si l'écran est plus petit. */
+function initialBounds(boundsFile: string): Bounds {
+  let saved: Bounds | null = null
+  try {
+    saved = JSON.parse(readFileSync(boundsFile, 'utf8')) as Bounds
+  } catch {
+    /* première ouverture */
+  }
+  const work = screen.getPrimaryDisplay().workAreaSize
+  const fallback: Bounds = {
+    width: Math.min(DEFAULT_SIZE.width, work.width - 40),
+    height: Math.min(DEFAULT_SIZE.height, work.height - 40),
+    maximized: saved?.maximized
+  }
+  if (!saved || saved.v !== 2) return fallback
+  // Position gardée seulement si la fenêtre reste visible sur un écran branché.
+  const visible =
+    saved.x !== undefined &&
+    saved.y !== undefined &&
+    screen.getAllDisplays().some((d) => {
+      const a = d.workArea
+      return saved.x! < a.x + a.width - 80 && saved.x! + saved.width > a.x + 80 && saved.y! >= a.y - 10 && saved.y! < a.y + a.height - 80
+    })
+  return visible ? saved : { ...fallback, width: saved.width, height: saved.height }
+}
+
+function createWindow(boundsFile: string): BrowserWindow {
+  const bounds = initialBounds(boundsFile)
+  const win = new BrowserWindow({
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: 560,
+    minHeight: 420,
+    show: false,
+    backgroundColor: windowBackground(),
+    title: 'FiveM Pack Manager',
+    icon: path.join(__dirname, '../../resources/icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      sandbox: true,
+      contextIsolation: true,
+      nodeIntegration: false,
+      spellcheck: false
+    }
+  })
+  win.once('ready-to-show', () => {
+    if (bounds.maximized) win.maximize()
+    win.show()
+  })
+  win.on('close', () => {
+    try {
+      writeFileSync(boundsFile, JSON.stringify({ ...win.getNormalBounds(), maximized: win.isMaximized(), v: 2 }))
+    } catch {
+      /* sans importance */
+    }
+  })
+
+  // Aucune navigation hors de l'application (ex. un fichier lâché à côté de la zone d'import).
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('http://localhost') || app.isPackaged) e.preventDefault()
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https:\/\//.test(url)) void shell.openExternal(url)
+    return { action: 'deny' }
+  })
+
+  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  else void win.loadFile(path.join(__dirname, '../renderer/index.html'))
+  return win
+}
