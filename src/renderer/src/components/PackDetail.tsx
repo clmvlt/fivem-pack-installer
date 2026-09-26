@@ -3,7 +3,7 @@ import type { Destination, Insight, PackComponent, PackManifest } from '@shared/
 import type { ComponentFile } from '@shared/api'
 import { useStore } from '../store'
 import { bytes, mediaUrl, packImages } from '../lib/format'
-import { LEVEL_LABEL, levelOf, type Level } from '../lib/insights'
+import { asiBuildText, LEVEL_LABEL, levelOf, type Level } from '@shared/insights'
 import { Cover, packMenuAction, Progress, RenameInput } from './common'
 import { Markdown } from './Markdown'
 
@@ -214,7 +214,7 @@ function Compatibility({ insights, build }: { insights: Insight[]; build: number
   for (const i of insights) {
     if (isRpf(i) && levelOf(i, build) === 'ok') continue
     const level = levelOf(i, build)
-    const text = level === 'warn' && i.builds?.length && build ? `${i.text} FiveM a lancé la build ${build} en dernier : il ne sera pas chargé.` : i.text
+    const text = i.builds?.length && build ? asiBuildText(i.builds, build) : i.text
     rows.push({ title: i.title, level, text })
   }
   const rank: Record<Level, number> = { bad: 0, warn: 1, ok: 2, info: 3 }

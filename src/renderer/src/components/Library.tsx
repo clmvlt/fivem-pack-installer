@@ -2,7 +2,7 @@ import { useMemo, useState, type MouseEvent } from 'react'
 import type { PackManifest, RootId, TaskProgress } from '@shared/types'
 import { useStore } from '../store'
 import { bytes } from '../lib/format'
-import { problemCount } from '../lib/insights'
+import { problemCount } from '@shared/insights'
 import { Cover, packMenuAction, packMeta, Progress, RenameInput } from './common'
 
 export function Library({ onOpen }: { onOpen: (id: string) => void }) {
