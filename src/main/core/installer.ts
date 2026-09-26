@@ -16,7 +16,18 @@ import { parseVersion, reshadeAckLine, versionAtLeast } from './binary'
 import { executePlan, type ExecProgress, type Op, type Plan, type PlanResult } from './executor'
 import { executePlanElevated } from './elevation'
 import { collectForeign, managedKey, managedSet, scanForeign, type ForeignCollection } from './foreign'
-import { defaultReshadeIni, iniGet, iniSet, presetDestFromIni, presetIniValue, RESHADE_INI_DEST } from './reshade'
+import {
+  defaultReshadeIni,
+  iniGet,
+  iniSet,
+  mergeQuantvPreset,
+  presetDestFromIni,
+  presetIniValue,
+  QUANTV_ADDON_DEST,
+  QUANTV_PRESET_DEST,
+  RESHADE_INI_DEST
+} from './reshade'
+import { isEnbLocal, withEnbFpsLimit, withPackFpsLimit } from './enb'
 import { CONFIG_EXT, ext, isAllowedFiveMPath, isProtectedGtaPath } from './knowledge'
 import type { Library, StoredManifest } from './library'
 import { JsonStore, pushHistory } from './stores'
@@ -33,6 +44,8 @@ export interface InstallerCtx {
   detectGames: () => Promise<GamesInfo>
   /** Enregistre une image (réduite) dans le dossier d'un pack ; renvoie son nom de fichier (cover-*.jpg). */
   saveCover?: (src: string, packDir: string) => Promise<string | null>
+  /** Limite d'images par seconde choisie dans l'application : null = celle du pack, 0 = aucune limite. */
+  fpsLimit?: () => number | null
 }
 
 interface InstallItem {
@@ -217,8 +230,12 @@ export class Installer {
       }
     }
 
-    // Preset ReShade du pack : ReShade.ini pointe dessus, sans passer par le menu de ReShade en jeu.
+    // Preset ReShade du pack : ReShade.ini pointe dessus, sans passer par le menu de ReShade en jeu ; avec QuantV,
+    // il est aussi recopié dans QuantV.preset.ini, le preset que QuantV impose à ReShade.
     if (manifest) items = await this.withPreset(manifest, items, roots)
+    if (manifest) items = await this.withQuantvPreset(manifest, items)
+    // Limite d'images par seconde choisie dans l'application : écrite dans l'enblocal.ini (ENB) du pack.
+    if (manifest) items = await this.withFpsLimit(manifest, items)
 
     // 2) Mods installés à la main et fichiers qui seraient écrasés : rangés dans « Ancienne installation ».
     const managed = managedSet(active)
@@ -422,6 +439,138 @@ export class Installer {
       fromUser: true
     }
     return idx >= 0 ? items.map((it, i) => (i === idx ? item : it)) : [...items, item]
+  }
+
+  /**
+   * QuantV (QuantV.addon) fait charger à ReShade QuantV.preset.ini au lieu du preset désigné par ReShade.ini : ce
+   * fichier reçoit donc le preset choisi pour le pack, avec les effets et réglages QuantV qui lui manqueraient. Les
+   * retouches faites en jeu sur cette copie sont gardées tant que le preset choisi reste le même.
+   */
+  private async withQuantvPreset(manifest: StoredManifest, items: InstallItem[]): Promise<InstallItem[]> {
+    const isFivem = (it: InstallItem, dest: string): boolean => it.dest.root === 'fivem' && it.dest.path.toLowerCase() === dest
+    if (!manifest.reshadePreset || !items.some((it) => isFivem(it, QUANTV_ADDON_DEST))) return items
+    const map = resolveInstallMap(manifest.components)
+    const presetDest = map.find((m) => m.rel === manifest.reshadePreset)?.dest
+    if (!presetDest || presetDest.root !== 'fivem' || presetDest.path.toLowerCase() === QUANTV_PRESET_DEST) return items
+    const idx = items.findIndex((it) => isFivem(it, QUANTV_PRESET_DEST))
+    if (idx >= 0 && items[idx].fromUser && manifest.quantvPresetFrom === manifest.reshadePreset) return items
+    const presetItem = items.find((it) => isFivem(it, presetDest.path.toLowerCase()))
+    const preset = presetItem ? await fs.readFile(presetItem.src, 'utf8').catch(() => null) : null
+    if (preset === null) return items
+    // Réglages QuantV fournis par le pack lui-même (et non une copie générée ou retouchée auparavant).
+    const lib = this.ctx.library()
+    const packQuantv = map.find((m) => m.dest.root === 'fivem' && m.dest.path.toLowerCase() === QUANTV_PRESET_DEST)
+    const quantvBase = packQuantv ? await fs.readFile(abs(lib.contentDir(manifest.id), packQuantv.rel), 'utf8').catch(() => null) : null
+    const content = mergeQuantvPreset(preset, quantvBase)
+    const generated = path.join(lib.packDir(manifest.id), 'generated', 'QuantV.preset.ini')
+    await fs.mkdir(path.dirname(generated), { recursive: true })
+    await fs.writeFile(generated, content, 'utf8')
+    if (manifest.quantvPresetFrom !== manifest.reshadePreset) {
+      manifest.quantvPresetFrom = manifest.reshadePreset
+      await lib.save(manifest)
+    }
+    log.info(`Preset QuantV de ${manifest.name} : ${path.posix.basename(manifest.reshadePreset)}`)
+    const item: InstallItem = {
+      src: generated,
+      source: 'generated/QuantV.preset.ini',
+      dest: { root: 'fivem', path: idx >= 0 ? items[idx].dest.path : 'plugins/QuantV.preset.ini' },
+      size: Buffer.byteLength(content),
+      fromUser: true
+    }
+    return idx >= 0 ? items.map((it, i) => (i === idx ? item : it)) : [...items, item]
+  }
+
+  /**
+   * enblocal.ini du pack avec la limite d'images par seconde choisie dans l'application. Sans limite choisie (« celle
+   * du pack »), le fichier d'origine reste tel quel, et une copie retouchée en jeu reprend la limite d'origine du pack.
+   */
+  private async withFpsLimit(manifest: StoredManifest, items: InstallItem[]): Promise<InstallItem[]> {
+    const limit = this.ctx.fpsLimit?.() ?? null
+    const targets = items.filter((it) => isEnbLocal(it.dest.path) && (limit !== null || it.fromUser))
+    if (!targets.length) return items
+    const lib = this.ctx.library()
+    const map = resolveInstallMap(manifest.components)
+    const out: InstallItem[] = []
+    for (const it of items) {
+      // latin1 : les octets du fichier sont gardés tels quels, quel que soit son encodage.
+      const content = targets.includes(it) ? await fs.readFile(it.src, 'latin1').catch(() => null) : null
+      let next: string | null = null
+      if (content !== null && limit !== null) next = withEnbFpsLimit(content, limit)
+      else if (content !== null) {
+        const rel = map.find((m) => destKey(m.dest) === destKey(it.dest))?.rel
+        const original = rel ? await fs.readFile(abs(lib.contentDir(manifest.id), rel), 'latin1').catch(() => null) : null
+        if (original !== null) next = withPackFpsLimit(content, original)
+      }
+      if (next === null || next === content) {
+        out.push(it)
+        continue
+      }
+      const generated = abs(path.join(lib.packDir(manifest.id), 'generated', 'fps', it.dest.root), it.dest.path)
+      await fs.mkdir(path.dirname(generated), { recursive: true })
+      await fs.writeFile(generated, next, 'latin1')
+      out.push({ ...it, src: generated, source: path.relative(lib.packDir(manifest.id), generated), size: Buffer.byteLength(next, 'latin1'), fromUser: true })
+    }
+    log.info(`Limite d'images par seconde de ${manifest.name} : ${limit === null ? 'celle du pack' : limit > 0 ? limit : 'aucune'}`)
+    return out
+  }
+
+  /**
+   * Limite d'images par seconde changée alors qu'un pack est installé : ses enblocal.ini sont remplacés tout de suite.
+   * Les retouches faites en jeu sur ces fichiers sont d'abord gardées dans les réglages du pack. Renvoie le nombre de
+   * fichiers mis à jour (0 : aucun pack installé, ou pack sans ENB).
+   */
+  async applyFpsLimit(report: Report): Promise<number> {
+    const active = this.state.active
+    const targets = active?.files.filter((f) => isEnbLocal(f.path)) ?? []
+    if (!active || !targets.length) return 0
+    const lib = this.ctx.library()
+    const manifest = await lib.get(active.packId).catch(() => null)
+    if (!manifest) return 0
+    await this.assertGameClosed()
+
+    let kept = 0
+    for (const f of targets) {
+      const target = abs(active.roots[f.root], f.path)
+      const st = await fs.stat(target).catch(() => null)
+      if (!st || (st.size === f.size && Math.abs(st.mtimeMs - f.mtimeMs) <= 1)) continue
+      const user = lib.userFile(manifest.id, { root: f.root, path: f.path })
+      await fs.mkdir(path.dirname(user), { recursive: true })
+      await fs.copyFile(target, user)
+      kept++
+    }
+    if (kept) {
+      manifest.userConfigCount = await lib.countUserConfigs(manifest.id)
+      await lib.save(manifest)
+    }
+
+    const keys = new Set(targets.map((f) => destKey(f)))
+    const items = (await this.withFpsLimit(manifest, await this.installItems(manifest))).filter((it) => keys.has(destKey(it.dest)))
+    const id = newId('fps-')
+    const ops: Op[] = []
+    const trashDirs = new Set<string>()
+    const placeIdx: { idx: number; item: InstallItem }[] = []
+    for (const it of items) {
+      const rp = active.roots[it.dest.root]
+      const trash = path.join(rp, `${TRASH_PREFIX}${id}`)
+      trashDirs.add(trash)
+      ops.push({ t: 'stash', path: abs(rp, it.dest.path), to: abs(trash, it.dest.path), size: 0 })
+      ops.push({ t: 'place', from: it.src, to: abs(rp, it.dest.path), link: this.canLink(it, rp), size: it.size })
+      placeIdx.push({ idx: ops.length - 1, item: it })
+    }
+    for (const t of trashDirs) ops.push({ t: 'rmTree', path: t, quiet: true })
+    const res = await this.runPlan({ id, title: "Limite d'images par seconde", mode: 'atomic', ops }, Object.values(active.roots), report)
+    if (!res.ok) throw new Error(res.rolledBack ? `${res.error ?? 'Échec'} Rien n'a été modifié.` : (res.error ?? "La limite n'a pas pu être appliquée."))
+
+    // Fichiers installés mis à jour : ils ne passent pas pour des réglages modifiés en jeu.
+    const placed = new Map(
+      placeIdx.map(({ idx, item }) => [
+        destKey(item.dest),
+        { size: res.results[idx]?.size ?? item.size, mtimeMs: res.results[idx]?.mtimeMs ?? 0, linked: !!res.results[idx]?.linked, source: item.source }
+      ])
+    )
+    const files = active.files.map((f) => ({ ...f, ...placed.get(destKey(f)) }))
+    await this.setState({ ...this.state, active: { ...active, files } })
+    return placed.size
   }
 
   /** Preset choisi dans le menu de ReShade en jeu : retenu pour les prochaines installations du pack. */

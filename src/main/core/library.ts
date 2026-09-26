@@ -24,6 +24,8 @@ export interface StoredManifest extends Omit<PackManifest, 'components'> {
   components: AnalyzedComponent[]
   files: PackFileEntry[]
   sourceSize: number
+  /** Preset ReShade recopié dans QuantV.preset.ini à la dernière installation (retouches en jeu gardées tant qu'il ne change pas). */
+  quantvPresetFrom?: string | null
 }
 
 export interface ImportProgress {

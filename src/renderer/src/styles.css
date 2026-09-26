@@ -839,6 +839,10 @@ input[type='checkbox'] {
 .settings-list select {
   width: 200px;
 }
+.meta-wrap {
+  margin-top: 2px;
+  white-space: normal;
+}
 .row.is-changed .row-main {
   font-weight: 600;
 }

@@ -153,6 +153,8 @@ export interface Settings {
   libraryDir: string
   fivemPath: string | null
   gtaPath: string | null
+  /** Limite d'images par seconde, appliquée par l'ENB des packs : null ou absent = celle du pack, 0 = aucune limite. */
+  fpsLimit?: number | null
 }
 
 // ---------------------------------------------------------------------------

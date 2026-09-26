@@ -58,6 +58,7 @@ export function Graphics() {
           <h1>Graphismes</h1>
         </header>
         <p className="empty">Fichier de réglages introuvable. Lancez FiveM une première fois, puis revenez ici.</p>
+        <FpsLimit />
       </div>
     )
 
@@ -125,6 +126,8 @@ export function Graphics() {
         ))}
       </div>
 
+      <FpsLimit />
+
       {GRAPHICS_GROUPS.map((group) => {
         const defs = GRAPHICS_SETTINGS.filter((d) => d.group === group && draft[d.key] !== undefined)
         if (!defs.length) return null
@@ -169,6 +172,68 @@ export function Graphics() {
         </div>
       )}
     </div>
+  )
+}
+
+const FPS_CHOICES = [60, 90, 120, 144, 165, 240]
+
+/**
+ * Limite d'images par seconde : FiveM n'en a pas, elle passe par le limiteur de l'ENB du pack (enblocal.ini). Le choix
+ * est retenu pour toutes les installations et appliqué tout de suite au pack installé.
+ */
+function FpsLimit() {
+  const { overview, run, setMessage } = useStore()
+  const [busy, setBusy] = useState(false)
+  if (!overview) return null
+  const limit = overview.settings.fpsLimit ?? null
+  const active = overview.state.active
+  const packName = active?.packName ?? null
+  const hasEnb = !!active?.files.some((f) => /(^|\/)enblocal\.ini$/i.test(f.path))
+  const value = limit === null ? 'pack' : String(limit)
+
+  const change = async (v: string): Promise<void> => {
+    const next = v === 'pack' ? null : Number(v)
+    setBusy(true)
+    const updated = await run(() => window.api.setFpsLimit(next))
+    setBusy(false)
+    if (updated === undefined) return
+    const what = next === null ? 'la limite prévue par chaque pack' : next === 0 ? 'aucune limite' : `${next} images par seconde au maximum`
+    setMessage({
+      kind: 'info',
+      text: updated && packName ? `${packName} : ${what}, dès le prochain lancement.` : `Choix enregistré : ${what}, pour les packs qui utilisent ENB.`
+    })
+  }
+
+  const note = !active
+    ? 'Appliquée à l’installation des packs qui utilisent ENB.'
+    : hasEnb
+      ? `Appliquée par l’ENB de ${q(packName ?? '')}.`
+      : `${q(packName ?? '')} n’utilise pas ENB : la limite servira aux packs qui en ont. Pour celui-ci, réglez la limite dans le panneau NVIDIA ou AMD.`
+
+  return (
+    <section>
+      <div className="section-head">
+        <h2>Images par seconde</h2>
+      </div>
+      <ul className="list settings-list">
+        <li className="row">
+          <div className="row-main">
+            <div>Limite d’images par seconde</div>
+            <div className="meta meta-wrap">{note}</div>
+          </div>
+          <select value={value} onChange={(e) => void change(e.target.value)} disabled={busy} aria-label="Limite d’images par seconde">
+            <option value="pack">Celle du pack</option>
+            <option value="0">Aucune limite</option>
+            {limit !== null && limit > 0 && !FPS_CHOICES.includes(limit) && <option value={String(limit)}>{limit} FPS</option>}
+            {FPS_CHOICES.map((n) => (
+              <option key={n} value={String(n)}>
+                {n} FPS
+              </option>
+            ))}
+          </select>
+        </li>
+      </ul>
+    </section>
   )
 }
 

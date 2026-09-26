@@ -8,6 +8,14 @@ import { base, ext } from './knowledge'
 
 export const RESHADE_INI_DEST = 'plugins/reshade.ini'
 
+// QuantV (version add-on de ReShade : QuantV.addon + QuantV.asi) impose à ReShade son propre preset : sa
+// configuration intégrée contient « PresetPath=.\QuantV.preset.ini ». Le preset choisi pour le pack doit donc aussi
+// se trouver dans ce fichier, sinon ReShade charge les réglages QuantV par défaut.
+export const QUANTV_ADDON_DEST = 'plugins/quantv.addon'
+export const QUANTV_PRESET_DEST = 'plugins/quantv.preset.ini'
+/** Effets activés par QuantV quand son preset n'en indique pas d'autres (valeurs intégrées à QuantV.addon). */
+export const QUANTV_DEFAULT_TECHNIQUES = 'QuantV@QuantV.fx,QuantV_PostFX@QuantV_Post.fx'
+
 /** ReShade.ini minimal, créé quand un pack fournit ReShade sans son fichier de configuration. */
 export function defaultReshadeIni(presetValue: string): string {
   return [
@@ -76,6 +84,71 @@ export function presetIniValue(destPath: string): string {
   return `.\\${destPath.replace(/^plugins\//i, '').split('/').join('\\')}`
 }
 
+/**
+ * Preset destiné à QuantV (QuantV.preset.ini) : même syntaxe que ReShade. Les effets QuantV y sont activés s'il leur
+ * manque, et les réglages QuantV du pack (sections [QuantV*.fx] de son QuantV.preset.ini) ajoutés s'ils ne figurent
+ * pas déjà dans le preset. Le reste du preset est gardé tel quel.
+ */
+export function mergeQuantvPreset(preset: string, quantvBase: string | null): string {
+  const eol = preset.includes('\r\n') ? '\r\n' : '\n'
+  const baseTechniques = splitList(iniTopValue(quantvBase ?? '', 'Techniques') ?? QUANTV_DEFAULT_TECHNIQUES).filter((t) => /quantv/i.test(t))
+  const techniques = splitList(iniTopValue(preset, 'Techniques') ?? '')
+  const missing = baseTechniques.filter((t) => !techniques.some((x) => x.toLowerCase() === t.toLowerCase()))
+  let out = preset
+  if (missing.length) {
+    out = setTopList(out, 'Techniques', [...missing, ...techniques], eol)
+    const sorting = iniTopValue(out, 'TechniqueSorting')
+    if (sorting !== null) out = setTopList(out, 'TechniqueSorting', [...missing, ...splitList(sorting)], eol)
+  }
+  // Réglages QuantV du pack pour les effets QuantV que le preset ne règle pas.
+  const present = new Set([...out.matchAll(/^\s*\[([^\]]+)\]\s*$/gm)].map((m) => m[1].trim().toLowerCase()))
+  for (const block of sectionBlocks(quantvBase ?? '')) {
+    if (!/quantv/i.test(block.name) || present.has(block.name.toLowerCase())) continue
+    out = `${out.replace(/\s*$/, '')}${eol}${eol}${block.lines.join(eol)}${eol}`
+  }
+  return out
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+/** Valeur d'une clé placée avant la première section (Techniques, TechniqueSorting…). */
+function iniTopValue(content: string, key: string): string | null {
+  const keyRe = new RegExp(`^\\s*${key}\\s*=(.*)$`, 'i')
+  for (const line of content.split(/\r?\n/)) {
+    if (/^\s*\[.*\]\s*$/.test(line)) break
+    const m = keyRe.exec(line)
+    if (m) return m[1].trim()
+  }
+  return null
+}
+
+function setTopList(content: string, key: string, values: string[], eol: string): string {
+  const lines = content.split(/\r?\n/)
+  const keyRe = new RegExp(`^\\s*${key}\\s*=`, 'i')
+  for (let i = 0; i < lines.length && !/^\s*\[.*\]\s*$/.test(lines[i]); i++) {
+    if (keyRe.test(lines[i])) {
+      lines[i] = `${key}=${values.join(',')}`
+      return lines.join(eol)
+    }
+  }
+  return [`${key}=${values.join(',')}`, ...lines].join(eol)
+}
+
+function sectionBlocks(content: string): { name: string; lines: string[] }[] {
+  const blocks: { name: string; lines: string[] }[] = []
+  for (const line of content.split(/\r?\n/)) {
+    const header = /^\s*\[([^\]]+)\]\s*$/.exec(line)
+    if (header) blocks.push({ name: header[1].trim(), lines: [line.trim()] })
+    else if (blocks.length && line.trim()) blocks[blocks.length - 1].lines.push(line)
+  }
+  return blocks
+}
+
 /** Presets ReShade d'un pack (fichiers .ini destinés à plugins et contenant « Techniques= »), et celui désigné par son ReShade.ini. */
 export async function detectPresets(
   contentDir: string,
@@ -89,6 +162,8 @@ export async function detectPresets(
       reshadeIni = rel
       continue
     }
+    // Fichier de travail de QuantV (rempli à l'installation avec le preset choisi), pas un preset à proposer.
+    if (dest.path.toLowerCase() === QUANTV_PRESET_DEST) continue
     try {
       const h = await fs.open(path.join(contentDir, ...rel.split('/')), 'r')
       const buf = Buffer.alloc(64 * 1024)

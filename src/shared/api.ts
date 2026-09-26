@@ -55,6 +55,11 @@ export interface PackManagerApi {
   getGraphics(target?: GraphicsTarget['id']): Promise<GraphicsState | null>
   saveGraphics(target: GraphicsTarget['id'], changes: Record<string, string>): Promise<GraphicsState>
   restoreGraphics(target: GraphicsTarget['id']): Promise<GraphicsState>
+  /**
+   * Limite d'images par seconde (null = celle du pack, 0 = aucune limite), écrite dans l'enblocal.ini (ENB) des packs
+   * et appliquée tout de suite au pack installé. Renvoie le nombre de fichiers du jeu mis à jour.
+   */
+  setFpsLimit(limit: number | null): Promise<number>
 
   moveLibrary(newDir: string): Promise<string>
   openPath(p: string): Promise<void>

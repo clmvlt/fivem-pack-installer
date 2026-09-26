@@ -8,7 +8,7 @@ import { inspectPe, inspectRpf, parseVersion, versionAtLeast } from './binary'
 import { base, ext, PROXY_DLLS } from './knowledge'
 
 /** À incrémenter quand les vérifications changent : les packs déjà importés sont revérifiés. */
-export const INSIGHTS_VERSION = 3
+export const INSIGHTS_VERSION = 4
 
 export interface InspectResult {
   insights: Insight[]

@@ -8,6 +8,7 @@ import type { ComponentFile, ForeignSelection, MarketQuery, PackManagerApi } fro
 import { IPC } from '@shared/api'
 import { detectGames, inspectFiveM, inspectGta, normalizeFiveMPath } from './core/games'
 import { Installer, type Report } from './core/installer'
+import { FPS_LIMIT_MAX, FPS_LIMIT_MIN } from './core/enb'
 import { Library, toPublic } from './core/library'
 import { GraphicsManager } from './core/graphics'
 import { Marketplace } from './core/marketplace'
@@ -62,7 +63,8 @@ export class Service {
       library: () => this.library,
       state: this.state,
       detectGames: () => this.refreshGames(),
-      saveCover: (src, packDir) => saveCover(src, packDir)
+      saveCover: (src, packDir) => saveCover(src, packDir),
+      fpsLimit: () => this.settings.get().fpsLimit ?? null
     })
     await fs.rm(path.join(this.dataDir, 'jobs'), { recursive: true, force: true }).catch(() => undefined)
     this.marketplace = new Marketplace(this.apiUrl, path.join(this.dataDir, 'Marketplace', 'images'), () => this.library)
@@ -376,6 +378,25 @@ export class Service {
       await this.state.set(pushHistory(this.state.get(), { action: 'graphics', ok: true, summary: `${n} réglage${n > 1 ? 's' : ''} graphique${n > 1 ? 's' : ''} modifié${n > 1 ? 's' : ''} (${t.target.label})` }))
       this.changed()
       return this.graphics.read(t.target, t.targets)
+    },
+
+    setFpsLimit: async (limit: number | null) => {
+      if (limit !== null && !(Number.isInteger(limit) && (limit === 0 || (limit >= FPS_LIMIT_MIN && limit <= FPS_LIMIT_MAX))))
+        throw this.toError(`Limite invalide : choisissez entre ${FPS_LIMIT_MIN} et ${FPS_LIMIT_MAX} images par seconde.`)
+      if (this.running) throw this.toError('Une opération est déjà en cours.')
+      const previous = this.settings.get().fpsLimit ?? null
+      await this.settings.patch({ fpsLimit: limit })
+      let updated: number
+      try {
+        updated = await this.installer.applyFpsLimit(() => undefined)
+      } catch (e) {
+        await this.settings.patch({ fpsLimit: previous })
+        throw e
+      }
+      const label = limit === null ? 'celle du pack' : limit === 0 ? 'aucune' : `${limit} FPS`
+      await this.state.set(pushHistory(this.state.get(), { action: 'graphics', ok: true, summary: `Limite d'images par seconde : ${label}` }))
+      this.changed()
+      return updated
     },
 
     restoreGraphics: async (id: GraphicsTarget['id']) => {

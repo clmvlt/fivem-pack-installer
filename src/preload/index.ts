@@ -24,6 +24,7 @@ const methods = [
   'setCover',
   'setCoverFromFile',
   'setReshadePreset',
+  'setFpsLimit',
   'deletePack',
   'openPackFolder',
   'applyPack',

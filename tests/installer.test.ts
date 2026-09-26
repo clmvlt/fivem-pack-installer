@@ -34,6 +34,7 @@ let gta: string
 let installer: InstanceType<typeof Installer>
 let library: InstanceType<typeof Library>
 let state: InstanceType<typeof JsonStore<AppState>>
+let fpsLimit: number | null = null
 
 const write = async (p: string, content: string | Buffer = 'x'): Promise<void> => {
   await fs.mkdir(path.dirname(p), { recursive: true })
@@ -91,6 +92,7 @@ beforeAll(async () => {
     library: () => library,
     state,
     detectGames: games,
+    fpsLimit: () => fpsLimit,
     saveCover: async (src, dir) => {
       const name = `cover-t${Date.now()}.png`
       await fs.copyFile(src, path.join(dir, name))
@@ -339,6 +341,98 @@ describe('preset ReShade', () => {
     expect(ini).toContain('EffectSearchPaths=.\\reshade-shaders\\Shaders\\**')
     await installer.removeActive(report)
     expect(existsSync(path.join(fivem, 'plugins', 'ReShade.ini'))).toBe(false)
+  })
+})
+
+describe('preset QuantV', () => {
+  it('recopie le preset choisi dans QuantV.preset.ini, garde les retouches en jeu et suit un changement de preset', async () => {
+    const src = path.join(root, 'sources', 'Pack QuantV')
+    await write(path.join(src, 'plugins', 'dxgi.dll'), 'reshade')
+    await write(path.join(src, 'plugins', 'QuantV.addon'), 'addon')
+    await write(path.join(src, 'plugins', 'QuantV.asi'), 'asi')
+    await write(path.join(src, 'plugins', 'QuantV.preset.ini'), 'Techniques=QuantV@QuantV.fx,QuantV_PostFX@QuantV_Post.fx\r\n')
+    await write(path.join(src, 'plugins', 'ReShade.ini'), '[GENERAL]\r\nPresetPath=.\\PRESET BH.ini\r\n')
+    const bh = 'Techniques=QuantV@QuantV.fx,QuantV_PostFX@QuantV_Post.fx,CAS@CAS.fx\r\n\r\n[QuantV.fx]\r\nBrighter_Nights=0\r\n'
+    await write(path.join(src, 'plugins', 'PRESET BH.ini'), bh)
+    await write(path.join(src, 'plugins', 'Nuit.ini'), 'Techniques=CAS@CAS.fx\r\n')
+    await write(path.join(src, 'mods', 'x.rpf'), 'rpf')
+    const m = await library.import(src, () => undefined)
+    // QuantV.preset.ini est le fichier de travail de QuantV, pas un preset à proposer.
+    expect(m.reshadePresets).not.toContain('plugins/QuantV.preset.ini')
+    expect(m.reshadePreset).toBe('plugins/PRESET BH.ini')
+
+    const quantvPreset = path.join(fivem, 'plugins', 'QuantV.preset.ini')
+    await installer.apply(m.id, report)
+    expect(await read(quantvPreset)).toBe(bh)
+    expect(await read(path.join(fivem, 'plugins', 'ReShade.ini'))).toContain('PresetPath=.\\PRESET BH.ini')
+
+    // Réglages QuantV retouchés en jeu : gardés en réinstallant le pack.
+    const tweaked = bh.replace('Brighter_Nights=0', 'Brighter_Nights=1')
+    await fs.writeFile(quantvPreset, tweaked)
+    const later = new Date(Date.now() + 20000)
+    await fs.utimes(quantvPreset, later, later)
+    await installer.apply(m.id, report)
+    expect(await read(quantvPreset)).toBe(tweaked)
+
+    // Autre preset choisi dans l'application : QuantV le reçoit, avec ses effets.
+    await library.setReshadePreset(m.id, 'plugins/Nuit.ini')
+    await installer.apply(m.id, report)
+    expect(await read(quantvPreset)).toBe('Techniques=QuantV@QuantV.fx,QuantV_PostFX@QuantV_Post.fx,CAS@CAS.fx\r\n')
+    // Le contenu d'origine du pack n'est pas modifié.
+    expect(await read(path.join(library.contentDir(m.id), 'plugins', 'QuantV.preset.ini'))).toBe('Techniques=QuantV@QuantV.fx,QuantV_PostFX@QuantV_Post.fx\r\n')
+
+    await installer.removeActive(report)
+    expect(existsSync(quantvPreset)).toBe(false)
+  })
+})
+
+describe("limite d'images par seconde (ENB)", () => {
+  it('écrit la limite dans enblocal.ini, tout de suite et à chaque installation, sans perdre les retouches en jeu', async () => {
+    const src = path.join(root, 'sources', 'Pack FPS')
+    const enblocal = '[PROXY]\r\nEnableProxyLibrary=false\r\n\r\n[LIMITER]\r\nWaitBusyRenderer=false\r\nEnableFPSLimit=true\r\nFPSLimit=60.0\r\n'
+    await write(path.join(src, 'enb', 'enbseries.ini'), '[GLOBAL]')
+    await write(path.join(src, 'enb', 'enblocal.ini'), enblocal)
+    await write(path.join(src, 'mods', 'x.rpf'), 'rpf')
+    const m = await library.import(src, () => undefined)
+    const installed = path.join(gta, 'enblocal.ini')
+    const userCopy = library.userFile(m.id, { root: 'gta', path: 'enblocal.ini' })
+
+    fpsLimit = null
+    await installer.apply(m.id, report)
+    expect(await read(installed)).toBe(enblocal)
+
+    // Limite choisie pendant que le pack est installé : appliquée tout de suite.
+    fpsLimit = 120
+    expect(await installer.applyFpsLimit(report)).toBe(1)
+    const limited = enblocal.replace('FPSLimit=60.0', 'FPSLimit=120.0')
+    expect(await read(installed)).toBe(limited)
+    expect(await read(path.join(library.contentDir(m.id), 'enb', 'enblocal.ini'))).toBe(enblocal)
+    // Réinstallation : même limite, et le fichier ne passe pas pour une retouche faite en jeu.
+    await installer.apply(m.id, report)
+    expect(await read(installed)).toBe(limited)
+    expect(existsSync(userCopy)).toBe(false)
+    expect(await trashLeft()).toEqual([])
+
+    // Retouche en jeu, puis « aucune limite » : la retouche est gardée.
+    await fs.writeFile(installed, limited.replace('EnableProxyLibrary=false', 'EnableProxyLibrary=true'))
+    const later = new Date(Date.now() + 20000)
+    await fs.utimes(installed, later, later)
+    fpsLimit = 0
+    expect(await installer.applyFpsLimit(report)).toBe(1)
+    expect(await read(installed)).toBe(limited.replace('EnableProxyLibrary=false', 'EnableProxyLibrary=true').replace('EnableFPSLimit=true', 'EnableFPSLimit=false'))
+    expect(existsSync(userCopy)).toBe(true)
+
+    // « Celle du pack » : la limite d'origine revient, la retouche reste.
+    fpsLimit = null
+    await installer.applyFpsLimit(report)
+    expect(await read(installed)).toBe(enblocal.replace('EnableProxyLibrary=false', 'EnableProxyLibrary=true'))
+
+    await installer.removeActive(report)
+    expect(existsSync(installed)).toBe(false)
+    // Aucun pack installé : rien à faire.
+    fpsLimit = 144
+    expect(await installer.applyFpsLimit(report)).toBe(0)
+    fpsLimit = null
   })
 })
 
