@@ -4,6 +4,8 @@
 
 Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReShade, mods `.rpf`) sans déplacer de fichiers à la main.
 
+**Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/fivem-pack-installer/releases/latest) (installateur ou version portable), aussi accessible depuis [packs.dimzou.fr/application](https://packs.dimzou.fr/application).
+
 ## Utilisation
 
 - **Bibliothèque** : vos packs en cartes avec leur image. Glissez une archive `.zip`, `.rar` ou `.7z` (ou un dossier) dans la fenêtre, ou cliquez sur « Ajouter un pack… ». « Installer » met le pack en place ; le pack installé auparavant est retiré automatiquement. « Retirer » remet le jeu dans son état d'origine.
