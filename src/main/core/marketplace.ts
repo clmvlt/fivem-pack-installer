@@ -2,8 +2,10 @@
 //
 // Le téléchargement se fait dans <bibliothèque>/.downloads/<id>/ (conservé entre deux lancements pour reprendre
 // là où il s'était arrêté), l'archive est vérifiée (SHA-256) puis importée comme un pack ajouté à la main.
-// Le pack garde un lien vers sa fiche (marketplace.id / sha256) : une autre empreinte en ligne signale une
-// nouvelle version. Les images sont servies à l'interface par pm-media://market/... avec un cache sur le disque.
+// Le pack garde un lien vers sa fiche (marketplace.id / sha256 / révision) : une autre révision en ligne signale une
+// nouvelle version. Quand seule une partie des fichiers change en ligne (« fichiers mis à jour », ex. QuantV.addon),
+// seuls ces fichiers sont téléchargés et la nouvelle version est construite à partir du pack local (marketUpdate.ts).
+// Les images sont servies à l'interface par pm-media://market/... avec un cache sur le disque.
 
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
@@ -16,6 +18,7 @@ import type { MarketPack, MarketPackDetail, MarketPage, MarketTag } from '@share
 import type { MarketQuery } from '@shared/api'
 import type { Report } from './installer'
 import type { Library, StoredManifest } from './library'
+import { localRevision, matchingFiles, planUpdate, remoteRevision, type RemoteFile, type UpdatePlan } from './marketUpdate'
 import { exists, formatBytes, freeSpace, walkFiles } from '../util/fsx'
 import { log } from '../util/log'
 
@@ -41,6 +44,9 @@ interface RemoteSummary {
   updatedAt: string
   archiveUpdatedAt: string | null
   cover: RemoteImage | null
+  /** Révision (archive et fichiers mis à jour) ; absente sur une API plus ancienne. */
+  revision?: string | null
+  files?: RemoteFile[]
 }
 
 interface RemoteDetail extends RemoteSummary {
@@ -111,6 +117,7 @@ export class Marketplace {
 
   private toMarket(r: RemoteSummary, index: Map<string, StoredManifest>): MarketPack {
     const local = index.get(r.id)
+    const plan: UpdatePlan = local ? planUpdate({ marketplace: local.marketplace!, files: local.files }, r) : { kind: 'none' }
     return {
       id: r.id,
       slug: r.slug,
@@ -127,7 +134,9 @@ export class Marketplace {
       archiveUpdatedAt: r.archiveUpdatedAt,
       cover: r.cover,
       localId: local?.id ?? null,
-      updateAvailable: !!local && local.marketplace!.sha256 !== r.sha256
+      revision: remoteRevision(r) ?? '',
+      updateAvailable: plan.kind !== 'none',
+      updateSize: plan.kind === 'files' ? plan.files.reduce((sum, f) => sum + f.size, 0) : (r.archiveSize ?? 0)
     }
   }
 
@@ -174,7 +183,7 @@ export class Marketplace {
     for (const m of (await this.localIndex()).values()) {
       const remote = this.catalog.get(m.marketplace!.id)
       if (remote) {
-        if (remote.sha256 && remote.sha256 !== m.marketplace!.sha256) updates.push(m.id)
+        if (planUpdate({ marketplace: m.marketplace!, files: m.files }, remote).kind !== 'none') updates.push(m.id)
       } else if (this.catalogComplete) gone.push(m.id)
     }
     return { updates, gone }
@@ -251,25 +260,58 @@ export class Marketplace {
     const lib = this.library()
     const index = await this.localIndex()
     const linked = index.get(remote.id) ?? null
+    const plan = linked ? planUpdate({ marketplace: linked.marketplace!, files: linked.files }, remote) : null
+    const revision = remoteRevision(remote)!
 
-    if (linked && linked.marketplace!.sha256 === remote.sha256) {
-      await this.applyMetadata(linked, remote, false, report)
+    if (linked && plan!.kind === 'none') {
+      // Rien de nouveau pour ce pack (les fichiers mis à jour en ligne ne le concernent pas) : fiche seulement.
+      await this.applyMetadata(linked, remote, false, report, { revision: localRevision(linked.marketplace!), files: linked.marketplace!.files ?? [] })
       return { packId: linked.id, name: linked.name, status: 'up-to-date' }
     }
     if (!linked) {
-      // Même archive déjà ajoutée à la main : on la relie à sa fiche plutôt que de la télécharger à nouveau.
+      // Même archive déjà ajoutée à la main : on la relie à sa fiche plutôt que de la télécharger à nouveau. Ses
+      // fichiers d'origine sont gardés : une révision différente proposera ensuite les fichiers mis à jour.
       const duplicate = await lib.findDuplicate(remote.archiveName, remote.archiveSize)
       if (duplicate && !duplicate.marketplace) {
-        await this.applyMetadata(duplicate, remote, false, report)
+        await this.applyMetadata(duplicate, remote, false, report, { revision: remote.sha256, files: [] })
         return { packId: duplicate.id, name: duplicate.name, status: 'linked' }
       }
     }
 
-    const file = await this.download(remote, report, signal)
-    const imported = await lib.import(file, (p) => report(p.phase, p.current, p.total), signal, { skipDuplicateCheck: true })
-    await this.applyMetadata(imported, remote, true, report)
-    await fs.rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined)
-    log.info(`Marketplace : ${remote.name} téléchargé (${formatBytes(remote.archiveSize)})`)
+    let imported: StoredManifest
+    let applied: { name: string; sha256: string }[]
+    if (linked && plan!.kind === 'files') {
+      // Même archive : seuls les fichiers mis à jour sont téléchargés, puis une nouvelle version est construite à
+      // partir du pack local (liens physiques, sans recopier les gigaoctets du pack).
+      const downloaded = await this.downloadFiles(remote, plan!.files, report, signal)
+      try {
+        imported = (await lib.derive(linked.id, downloaded.files, (p) => report(p.phase, p.current, p.total), signal)).manifest
+      } finally {
+        await fs.rm(downloaded.dir, { recursive: true, force: true }).catch(() => undefined)
+      }
+      const merged = new Map((linked.marketplace!.files ?? []).map((f) => [f.name.toLowerCase(), f]))
+      for (const f of plan!.files) merged.set(f.fileName.toLowerCase(), { name: f.fileName, sha256: f.sha256 })
+      applied = [...merged.values()]
+      await this.applyMetadata(imported, remote, false, report, { revision, files: applied })
+      log.info(`Marketplace : ${remote.name} mis à jour (${plan!.files.map((f) => f.fileName).join(', ')})`)
+    } else {
+      const file = await this.download(remote, report, signal)
+      imported = await lib.import(file, (p) => report(p.phase, p.current, p.total), signal, { skipDuplicateCheck: true })
+      await fs.rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined)
+      // Fichiers mis à jour en ligne qui concernent ce pack : appliqués tout de suite.
+      const matching = matchingFiles(imported.files, remote.files ?? [])
+      if (matching.length) {
+        const downloaded = await this.downloadFiles(remote, matching, report, signal)
+        try {
+          await lib.replaceFiles(imported.id, downloaded.files)
+        } finally {
+          await fs.rm(downloaded.dir, { recursive: true, force: true }).catch(() => undefined)
+        }
+      }
+      applied = matching.map((f) => ({ name: f.fileName, sha256: f.sha256 }))
+      await this.applyMetadata(imported, remote, true, report, { revision, files: applied })
+      log.info(`Marketplace : ${remote.name} téléchargé (${formatBytes(remote.archiveSize)})`)
+    }
     if (!linked) return { packId: imported.id, name: imported.name, status: 'added' }
 
     // Nouvelle version d'un pack déjà présent : même nom, même preset, mêmes réglages personnels.
@@ -343,6 +385,43 @@ export class Marketplace {
     return final
   }
 
+  /**
+   * Télécharge des fichiers mis à jour (vérifiés) dans .downloads/<pack>-files/ ; renvoie leurs chemins par nom de
+   * fichier en minuscules, le nom qui désigne les fichiers à remplacer dans le pack.
+   */
+  private async downloadFiles(
+    remote: RemoteDetail,
+    files: RemoteFile[],
+    report: Report,
+    signal: AbortSignal
+  ): Promise<{ dir: string; files: Map<string, string> }> {
+    const dir = path.join(this.library().dir, '.downloads', `${remote.id}-files`)
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
+    await fs.mkdir(dir, { recursive: true })
+    const total = files.reduce((sum, f) => sum + f.size, 0)
+    const result = new Map<string, string>()
+    let before = 0
+    for (const f of files) {
+      const target = path.join(dir, `${f.id}-${safeFileName(f.fileName)}`)
+      const part = `${target}.part`
+      const url = `${this.apiUrl}/packs/${remote.id}/files/${f.id}`
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await this.fetchInto(url, part, f.size, f.sha256, (_phase, current) => report(`Téléchargement de ${f.fileName}`, before + current, total), signal)
+          break
+        } catch (err) {
+          if (signal.aborted || attempt >= 5 || (err as Error & { fatal?: boolean }).fatal) throw err
+          await new Promise((r) => setTimeout(r, attempt * 2000))
+        }
+      }
+      if ((await sha256File(part, signal)) !== f.sha256) throw new Error(`${f.fileName} : fichier reçu endommagé. Relancez la mise à jour.`)
+      await fs.rename(part, target)
+      result.set(f.fileName.toLowerCase(), target)
+      before += f.size
+    }
+    return { dir, files: result }
+  }
+
   private async fetchInto(url: string, part: string, size: number, sha: string, report: Report, signal: AbortSignal): Promise<void> {
     let start = (await fs.stat(part).catch(() => null))?.size ?? 0
     if (start > size) {
@@ -377,7 +456,13 @@ export class Marketplace {
   }
 
   /** Nom, description, auteur et images de la fiche, copiés dans le pack de la bibliothèque. */
-  private async applyMetadata(pack: StoredManifest, remote: RemoteDetail, fresh: boolean, report: Report): Promise<void> {
+  private async applyMetadata(
+    pack: StoredManifest,
+    remote: RemoteDetail,
+    fresh: boolean,
+    report: Report,
+    content: { revision: string; files: { name: string; sha256: string }[] }
+  ): Promise<void> {
     const lib = this.library()
     const m = await lib.get(pack.id)
     const packDir = lib.packDir(m.id)
@@ -409,7 +494,15 @@ export class Marketplace {
     if (fresh) m.name = remote.name
     m.description = remote.description
     m.author = remote.author
-    m.marketplace = { id: remote.id, slug: remote.slug, sha256: remote.sha256!, version: remote.version, downloadedAt: new Date().toISOString() }
+    m.marketplace = {
+      id: remote.id,
+      slug: remote.slug,
+      sha256: remote.sha256!,
+      revision: content.revision,
+      files: content.files,
+      version: remote.version,
+      downloadedAt: new Date().toISOString()
+    }
     await lib.save(m)
   }
 }
