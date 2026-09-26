@@ -29,16 +29,16 @@ jobs:
       HAS_SIGNING_KEY: ${{ secrets.PM_SIGNING_KEY != '' }}
       HAS_ADMIN: ${{ secrets.PACKS_ADMIN_PASSWORD != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -92,7 +92,7 @@ jobs:
           node scripts/sign-release.mjs release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
 
       - name: Release GitHub
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: FiveM Pack Manager ${{ env.VERSION }}
           body_path: ${{ env.NOTES_FILE }}
@@ -112,7 +112,8 @@ jobs:
 
       - name: Secrets manquants
         if: env.HAS_SIGNING_KEY != 'true' || env.HAS_ADMIN != 'true'
-        run: echo "::warning::Secrets PM_SIGNING_KEY ou PACKS_ADMIN_PASSWORD absents : release GitHub créée, mais la version n'est pas mise en ligne sur packs.dimzou.fr."
+        run: |
+          echo "::warning::Secrets PM_SIGNING_KEY ou PACKS_ADMIN_PASSWORD absents. Release GitHub créée, mais la version n'est pas mise en ligne sur packs.dimzou.fr."
 
       - name: Nettoyage de la clé
         if: always()
