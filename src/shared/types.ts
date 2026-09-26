@@ -102,12 +102,8 @@ export interface PackManifest {
 export interface MarketplaceLink {
   id: string
   slug: string
-  /** Empreinte de l'archive d'origine du pack. */
+  /** Empreinte de l'archive installée : une autre empreinte en ligne signale une mise à jour. */
   sha256: string
-  /** Révision en ligne au moment du téléchargement (archive et fichiers mis à jour) ; absente : celle de l'archive. */
-  revision?: string
-  /** Fichiers mis à jour de la Marketplace appliqués au pack (remplacent les fichiers du même nom). */
-  files?: { name: string; sha256: string }[]
   version: string
   downloadedAt: string
 }
@@ -307,12 +303,8 @@ export interface MarketPack {
   cover: MarketImage | null
   /** Pack correspondant dans la bibliothèque (null s'il n'a pas été téléchargé). */
   localId: string | null
-  /** Révision en ligne (archive et fichiers mis à jour). */
-  revision: string
-  /** La version en ligne apporte quelque chose au pack de la bibliothèque. */
+  /** La version en ligne diffère de celle de la bibliothèque. */
   updateAvailable: boolean
-  /** Taille à télécharger pour la mise à jour (archive entière, ou seulement les fichiers mis à jour). */
-  updateSize: number
 }
 
 export interface MarketPackDetail extends MarketPack {

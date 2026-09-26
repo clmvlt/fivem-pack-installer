@@ -349,85 +349,6 @@ export class Library {
     }
   }
 
-  /**
-   * Nouvelle version d'un pack à partir d'une autre, sans rien retélécharger : mêmes fichiers (liens physiques pour
-   * les gros fichiers, donc instantané et sans place en plus), sauf ceux dont le nom figure dans `replacements`
-   * (nom en minuscules → fichier de remplacement). Les réglages du pack (destinations, preset, images) sont repris.
-   */
-  async derive(
-    fromId: string,
-    replacements: Map<string, string>,
-    onProgress: (p: ImportProgress) => void,
-    signal?: AbortSignal
-  ): Promise<{ manifest: StoredManifest; replaced: string[] }> {
-    const from = await this.get(fromId)
-    const id = `${slugify(from.name) || 'pack'}-${newId()}`
-    const staging = path.join(this.dir, '.staging', id)
-    const content = path.join(staging, 'content')
-    const source = this.contentDir(fromId)
-    const replaced: string[] = []
-    try {
-      const files = await walkFiles(source)
-      for (const [i, f] of files.entries()) {
-        signal?.throwIfAborted()
-        const target = path.join(content, ...f.rel.split('/'))
-        await fs.mkdir(path.dirname(target), { recursive: true })
-        const replacement = replacements.get(path.posix.basename(f.rel).toLowerCase())
-        if (replacement) {
-          await fs.copyFile(replacement, target)
-          replaced.push(f.rel)
-        } else {
-          await linkOrCopy(path.join(source, ...f.rel.split('/')), target, f.size)
-        }
-        onProgress({ phase: 'Préparation de la nouvelle version', current: i + 1, total: files.length, detail: f.rel })
-      }
-      // Images du pack (couverture, images de la Marketplace…) ; les réglages en jeu (user/) sont repris à part.
-      for (const entry of await fs.readdir(this.packDir(fromId), { withFileTypes: true })) {
-        if (!entry.isFile() || entry.name === 'pack.json') continue
-        await fs.copyFile(path.join(this.packDir(fromId), entry.name), path.join(staging, entry.name))
-      }
-      await moveDir(staging, this.packDir(id))
-    } catch (err) {
-      await fs.rm(staging, { recursive: true, force: true, maxRetries: 3 }).catch(() => undefined)
-      throw err
-    }
-
-    const now = new Date().toISOString()
-    const manifest: StoredManifest = { ...structuredClone(from), id, importedAt: now, updatedAt: now, deleting: undefined, userConfigCount: 0 }
-    await this.syncSizes(manifest, replaced)
-    await this.refreshInsights(manifest)
-    await this.save(manifest)
-    log.info(`Nouvelle version de ${manifest.name} : ${replaced.length} fichier(s) remplacé(s)`)
-    return { manifest, replaced }
-  }
-
-  /** Remplace sur place des fichiers d'un pack qui vient d'être importé (pas encore installé dans le jeu). */
-  async replaceFiles(id: string, replacements: Map<string, string>): Promise<string[]> {
-    const m = await this.get(id)
-    const replaced: string[] = []
-    for (const f of m.files) {
-      const replacement = replacements.get(path.posix.basename(f.rel).toLowerCase())
-      if (!replacement) continue
-      await fs.copyFile(replacement, path.join(this.contentDir(id), ...f.rel.split('/')))
-      replaced.push(f.rel)
-    }
-    if (replaced.length) {
-      await this.syncSizes(m, replaced)
-      await this.refreshInsights(m)
-      await this.save(m)
-    }
-    return replaced
-  }
-
-  /** Tailles des fichiers remplacés, dans le manifeste. */
-  private async syncSizes(m: StoredManifest, rels: string[]): Promise<void> {
-    const changed = new Set(rels)
-    for (const f of m.files) {
-      if (changed.has(f.rel)) f.size = (await fs.stat(path.join(this.contentDir(m.id), ...f.rel.split('/')))).size
-    }
-    m.contentSize = m.files.reduce((sum, f) => sum + f.size, 0)
-  }
-
   /** Les packs contiennent souvent d'autres archives (ex. « mods.rar » dans un .zip) : on les extrait sur place. */
   private async extractNested(root: string, onProgress: (p: ImportProgress) => void, signal?: AbortSignal): Promise<void> {
     for (let depth = 0; depth < MAX_NESTED_DEPTH; depth++) {
@@ -563,21 +484,6 @@ export class Library {
 
 const CAPTURE_TOP: Record<RootId, string> = { fivem: 'FiveM Application Data', gta: 'GTA V' }
 const RESHADE_FIXED = "Chemins du PC de l'auteur corrigés."
-
-/** Gros fichiers : lien physique (même disque que la bibliothèque) ; petits fichiers ou disque sans liens : copie. */
-const LINK_MIN_SIZE = 256 * 1024
-
-async function linkOrCopy(from: string, to: string, size: number): Promise<void> {
-  if (size >= LINK_MIN_SIZE) {
-    try {
-      await fs.link(from, to)
-      return
-    } catch {
-      // Disque sans liens physiques (FAT32, réseau) : copie.
-    }
-  }
-  await fs.copyFile(from, to)
-}
 
 export function cleanName(fileName: string): string {
   return (

@@ -7,17 +7,11 @@ import { Markdown } from './Markdown'
 import { Progress } from './common'
 
 /** État d'un pack de la Marketplace par rapport à la bibliothèque. */
-function localState(
-  item: { id: string; revision: string; updateAvailable: boolean },
-  library: PackManifest[]
-): { local: PackManifest | null; update: boolean } {
+function localState(item: { id: string; sha256: string }, library: PackManifest[]): { local: PackManifest | null; update: boolean } {
   // Deux versions présentes (mise à jour pas encore installée) : la plus récente fait foi.
   const matches = library.filter((p) => p.marketplace?.id === item.id).sort((a, b) => b.marketplace!.downloadedAt.localeCompare(a.marketplace!.downloadedAt))
   const local = matches[0] ?? null
-  // La décision vient du processus principal (fichiers mis à jour qui concernent ou non ce pack) ; une fois la
-  // nouvelle version dans la bibliothèque, sa révision est celle en ligne et le bouton disparaît.
-  const revision = local?.marketplace ? (local.marketplace.revision ?? local.marketplace.sha256) : null
-  return { local, update: !!local && item.updateAvailable && !!item.revision && revision !== item.revision }
+  return { local, update: !!local && !!item.sha256 && local.marketplace!.sha256 !== item.sha256 }
 }
 
 export function Marketplace({ openId, onOpen, onOpenLocal }: { openId: string | null; onOpen: (id: string | null) => void; onOpenLocal: (id: string) => void }) {
@@ -174,7 +168,7 @@ function MarketAction({
   onOpenLocal,
   wide = false
 }: {
-  item: { id: string; revision: string; updateAvailable: boolean; updateSize: number }
+  item: { id: string; sha256: string }
   library: PackManifest[]
   task: TaskProgress | null
   onOpenLocal: (id: string) => void
@@ -197,12 +191,7 @@ function MarketAction({
     <>
       {update && !wide && <span className="accent-text small">Nouvelle version</span>}
       <div className="spacer" />
-      <button
-        className={`primary ${wide ? 'wide' : ''}`}
-        onClick={install}
-        disabled={!!task}
-        title={update ? `${bytes(item.updateSize)} à télécharger` : undefined}
-      >
+      <button className={`primary ${wide ? 'wide' : ''}`} onClick={install} disabled={!!task}>
         {update ? 'Mettre à jour' : 'Télécharger'}
       </button>
     </>
