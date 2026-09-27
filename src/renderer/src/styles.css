@@ -498,6 +498,67 @@ input[type='checkbox'] {
 .thumb:hover:not(.is-selected) {
   border-color: var(--btn-border-bottom);
 }
+.thumb-video {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: var(--btn);
+  font-size: 12px;
+}
+
+/* Vidéo YouTube : couverture assombrie et bouton de lecture, puis le lecteur (chargé au clic). */
+.viewer iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.video-facade {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #000;
+  color: #fff;
+}
+.video-facade:hover:not(:disabled) {
+  background: #000;
+}
+.video-facade .cover-img,
+.video-facade .cover-empty {
+  opacity: 0.5;
+}
+.video-facade:hover .cover-img,
+.video-facade:hover .cover-empty {
+  opacity: 0.62;
+}
+.video-play {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin: auto;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #000;
+}
+.video-play svg {
+  margin-left: 3px;
+}
+.video-note {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 12px;
+}
 .media-actions {
   display: flex;
   gap: 16px;

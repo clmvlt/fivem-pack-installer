@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Destination, Insight, PackComponent, PackManifest } from '@shared/types'
 import type { ComponentFile } from '@shared/api'
 import { useStore } from '../store'
 import { bytes, mediaUrl, packImages } from '../lib/format'
 import { asiBuildText, LEVEL_LABEL, levelOf, type Level } from '@shared/insights'
 import { Cover, packMenuAction, Progress, RenameInput } from './common'
+import { Gallery } from './Gallery'
 import { Markdown } from './Markdown'
 
 const DESTINATIONS: { key: string; label: string; dest: Destination | null }[] = [
@@ -23,7 +24,23 @@ const labelOf = (d: Destination): string => `${d.root === 'fivem' ? 'FiveM' : 'G
 export function PackDetail({ pack, onBack }: { pack: PackManifest; onBack: () => void }) {
   const { overview, task, run } = useStore()
   const [renaming, setRenaming] = useState(false)
-  const [shown, setShown] = useState(0)
+  const [fetched, setFetched] = useState<{ marketId: string; youtubeId: string | null } | null>(null)
+  const marketId = pack.marketplace?.id
+
+  // Pack téléchargé avant l'ajout des vidéos : on la cherche sur sa fiche.
+  useEffect(() => {
+    if (!marketId || pack.youtubeId !== undefined) return
+    let live = true
+    window.api.marketDetail(marketId).then(
+      (d) => live && setFetched({ marketId, youtubeId: d.youtubeId }),
+      () => undefined
+    )
+    return () => {
+      live = false
+    }
+  }, [marketId, pack.youtubeId])
+  const video = pack.youtubeId !== undefined ? pack.youtubeId : fetched && fetched.marketId === marketId ? fetched.youtubeId : null
+
   if (!overview) return null
   const active = overview.state.active?.packId === pack.id
   const mine = task && task.detail === pack.id ? task : null
@@ -31,7 +48,6 @@ export function PackDetail({ pack, onBack }: { pack: PackManifest; onBack: () =>
   const installable = pack.components.filter((c) => c.enabled && c.destination)
   const modified = pack.components.some((c) => keyOf(c.destination) !== keyOf(c.suggested) || c.enabled !== (c.suggested !== null && !c.optional))
   const images = packImages(pack)
-  const current = images[Math.min(shown, Math.max(0, images.length - 1))]
   const imported = new Date(pack.importedAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
   const market = pack.marketplace
   const updateAvailable = overview.market.updates.includes(pack.id)
@@ -47,28 +63,26 @@ export function PackDetail({ pack, onBack }: { pack: PackManifest; onBack: () =>
       </div>
 
       <div className="store">
-        <div className="media">
-          <div className="viewer">{current ? <Cover pack={pack} rel={current} /> : <div className="cover-empty">Aucune image</div>}</div>
-          {images.length > 1 && (
-            <div className="thumbs">
-              {images.map((rel, i) => (
-                <button key={rel} className={`thumb ${rel === current ? 'is-selected' : ''}`} onClick={() => setShown(i)} aria-label={`Image ${i + 1}`}>
-                  <img src={mediaUrl(pack.id, rel)} alt="" draggable={false} />
+        <Gallery
+          key={pack.id}
+          images={images}
+          youtubeId={video}
+          image={(rel) => <Cover pack={pack} rel={rel} />}
+          thumb={(rel) => mediaUrl(pack.id, rel)}
+          empty={<div className="cover-empty">Aucune image</div>}
+          actions={(current) => (
+            <div className="media-actions">
+              {current && current !== images[0] && (
+                <button className="link" onClick={() => void run(() => window.api.setCover(pack.id, current))}>
+                  Utiliser comme image du pack
                 </button>
-              ))}
+              )}
+              <button className="link" onClick={() => void run(() => window.api.setCoverFromFile(pack.id))}>
+                {images.length ? 'Choisir une autre image…' : 'Choisir une image…'}
+              </button>
             </div>
           )}
-          <div className="media-actions">
-            {current && current !== images[0] && (
-              <button className="link" onClick={() => void run(() => window.api.setCover(pack.id, current))}>
-                Utiliser comme image du pack
-              </button>
-            )}
-            <button className="link" onClick={() => void run(() => window.api.setCoverFromFile(pack.id))}>
-              {images.length ? 'Choisir une autre image…' : 'Choisir une image…'}
-            </button>
-          </div>
-        </div>
+        />
 
         <aside className="side">
           {renaming ? <RenameInput pack={pack} onDone={() => setRenaming(false)} className="rename big" /> : <h1 className="pack-title">{pack.name}</h1>}

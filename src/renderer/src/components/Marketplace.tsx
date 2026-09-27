@@ -3,6 +3,7 @@ import type { MarketPack, MarketPackDetail, MarketPage, MarketTag, PackManifest,
 import type { MarketQuery } from '@shared/api'
 import { cleanError, useStore } from '../store'
 import { bytes, marketImageUrl } from '../lib/format'
+import { Gallery } from './Gallery'
 import { Markdown } from './Markdown'
 import { Progress } from './common'
 
@@ -202,7 +203,6 @@ function MarketDetail({ id, onBack, onOpenLocal }: { id: string; onBack: () => v
   const { overview, task, run } = useStore()
   const [pack, setPack] = useState<MarketPackDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [shown, setShown] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -245,8 +245,7 @@ function MarketDetail({ id, onBack, onOpenLocal }: { id: string; onBack: () => v
       </div>
     )
 
-  const current = pack.images[Math.min(shown, Math.max(0, pack.images.length - 1))]
-  const mine = task?.kind === 'download' && task.detail === pack.id ? task : null
+  const mine =task?.kind === 'download' && task.detail === pack.id ? task : null
   const { update } = localState(pack, overview.library)
   const date = (iso: string | null): string => (iso ? new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '')
 
@@ -254,20 +253,14 @@ function MarketDetail({ id, onBack, onOpenLocal }: { id: string; onBack: () => v
     <div className="page">
       {back}
       <div className="store">
-        <div className="media">
-          <div className="viewer">
-            {current ? <img className="cover-img contain" src={marketImageUrl(pack.id, current.id)} alt="" draggable={false} /> : <div className="cover-empty">{pack.name}</div>}
-          </div>
-          {pack.images.length > 1 && (
-            <div className="thumbs">
-              {pack.images.map((image, i) => (
-                <button key={image.id} className={`thumb ${image.id === current?.id ? 'is-selected' : ''}`} onClick={() => setShown(i)} aria-label={`Image ${i + 1}`}>
-                  <img src={marketImageUrl(pack.id, image.id, true)} alt="" draggable={false} />
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <Gallery
+          key={pack.id}
+          images={pack.images.map((image) => image.id)}
+          youtubeId={pack.youtubeId}
+          image={(imageId) => <img className="cover-img contain" src={marketImageUrl(pack.id, imageId)} alt="" draggable={false} />}
+          thumb={(imageId) => marketImageUrl(pack.id, imageId, true)}
+          empty={<div className="cover-empty">{pack.name}</div>}
+        />
 
         <aside className="side">
           <h1 className="pack-title">{pack.name}</h1>
