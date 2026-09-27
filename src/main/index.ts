@@ -74,17 +74,28 @@ function startApp(): void {
     })
 
     if (app.isPackaged) {
+      // Page de l'application seulement : le lecteur YouTube (dans un cadre) garde ses propres règles.
       session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
+        if (details.resourceType !== 'mainFrame') return cb({})
         cb({
           responseHeaders: {
             ...details.responseHeaders,
             'Content-Security-Policy': [
-              "default-src 'self'; img-src 'self' pm-media: data:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+              "default-src 'self'; img-src 'self' pm-media: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src https://www.youtube-nocookie.com"
             ]
           }
         })
       })
     }
+
+    // Vidéos des packs : YouTube refuse de lire une vidéo intégrée sans l'adresse de la page qui l'affiche (« Erreur
+    // 153 »), et une page chargée depuis un fichier n'en donne pas. On présente celle du site des packs.
+    const referer = service.marketplace.siteUrl('/')
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://www.youtube-nocookie.com/*'] }, (details, cb) => {
+      const headers = details.requestHeaders
+      if (!Object.keys(headers).some((k) => k.toLowerCase() === 'referer')) headers.Referer = referer
+      cb({ requestHeaders: headers })
+    })
 
     ipcMain.handle(IPC.invoke, async (_e, method: string, args: unknown[]) => {
       const fn = (service.api as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>)[method]
