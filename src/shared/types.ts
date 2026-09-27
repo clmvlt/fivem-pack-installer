@@ -96,6 +96,8 @@ export interface PackManifest {
   /** Description (Markdown) fournie par la Marketplace. */
   description?: string
   author?: string
+  /** Vidéo YouTube de la fiche Marketplace (absent : pack téléchargé avant la version 1.5.2). */
+  youtubeId?: string | null
 }
 
 /** Lien entre un pack de la bibliothèque et sa fiche sur la Marketplace. */
@@ -311,6 +313,8 @@ export interface MarketPackDetail extends MarketPack {
   description: string
   archiveName: string
   images: MarketImage[]
+  /** Identifiant de la vidéo YouTube de présentation (null si aucune). */
+  youtubeId: string | null
 }
 
 export interface MarketPage {

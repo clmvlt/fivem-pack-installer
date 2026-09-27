@@ -46,6 +46,7 @@ interface RemoteSummary {
 interface RemoteDetail extends RemoteSummary {
   description: string
   images: RemoteImage[]
+  youtubeId?: string | null
 }
 
 interface RemotePage {
@@ -72,7 +73,13 @@ export interface InstallResult {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/
 const IMAGE_CACHE_MAX = 300 * 1024 * 1024
+
+/** Vidéo YouTube de la fiche (null si aucune, ou si l'identifiant reçu n'en est pas un). */
+function youtubeId(r: RemoteDetail): string | null {
+  return r.youtubeId && YOUTUBE_ID.test(r.youtubeId) ? r.youtubeId : null
+}
 
 export class Marketplace {
   private catalog = new Map<string, RemoteSummary>()
@@ -146,7 +153,7 @@ export class Marketplace {
 
   async detail(idOrSlug: string): Promise<MarketPackDetail> {
     const [r, index] = await Promise.all([this.remoteDetail(idOrSlug), this.localIndex()])
-    return { ...this.toMarket(r, index), description: r.description, archiveName: r.archiveName ?? '', images: r.images }
+    return { ...this.toMarket(r, index), description: r.description, archiveName: r.archiveName ?? '', images: r.images, youtubeId: youtubeId(r) }
   }
 
   private async remoteDetail(idOrSlug: string): Promise<RemoteDetail> {
@@ -379,7 +386,7 @@ export class Marketplace {
     if (received !== size) throw new Error('Téléchargement incomplet.')
   }
 
-  /** Nom, description, auteur et images de la fiche, copiés dans le pack de la bibliothèque. */
+  /** Nom, description, auteur, images et vidéo de la fiche, copiés dans le pack de la bibliothèque. */
   private async applyMetadata(pack: StoredManifest, remote: RemoteDetail, fresh: boolean, report: Report): Promise<void> {
     const lib = this.library()
     const m = await lib.get(pack.id)
@@ -412,6 +419,7 @@ export class Marketplace {
     if (fresh) m.name = remote.name
     m.description = remote.description
     m.author = remote.author
+    m.youtubeId = youtubeId(remote)
     m.marketplace = { id: remote.id, slug: remote.slug, sha256: remote.sha256!, version: remote.version, downloadedAt: new Date().toISOString() }
     await lib.save(m)
   }
