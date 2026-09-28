@@ -2,6 +2,8 @@
 //
 // Le téléchargement se fait dans <bibliothèque>/.downloads/<id>/ (conservé entre deux lancements pour reprendre
 // là où il s'était arrêté), l'archive est vérifiée (SHA-256) puis importée comme un pack ajouté à la main.
+// Pack chiffré : le serveur n'envoie jamais son archive mais un paquet chiffré, gardé tel quel dans la bibliothèque
+// (pack protégé, voir library.ts), et sa clé.
 // Le pack garde un lien vers sa fiche (marketplace.id / sha256) : une autre empreinte en ligne signale une
 // nouvelle version. Les images sont servies à l'interface par pm-media://market/... avec un cache sur le disque.
 
@@ -15,7 +17,8 @@ import { net } from 'electron'
 import type { MarketPack, MarketPackDetail, MarketPage, MarketTag } from '@shared/types'
 import type { MarketQuery } from '@shared/api'
 import type { Report } from './installer'
-import type { Library, StoredManifest } from './library'
+import type { ImportProgress, Library, StoredManifest } from './library'
+import { KEY_SIZE, packageId } from './sealed'
 import { exists, formatBytes, freeSpace, walkFiles } from '../util/fsx'
 import { log } from '../util/log'
 
@@ -41,6 +44,9 @@ interface RemoteSummary {
   updatedAt: string
   archiveUpdatedAt: string | null
   cover: RemoteImage | null
+  /** Pack chiffré : installable seulement avec l'application, qui télécharge {@link encryptedPackage}. */
+  encrypted?: boolean
+  encryptedPackage?: { size?: number | null; sha256?: string | null } | null
 }
 
 interface RemoteDetail extends RemoteSummary {
@@ -79,6 +85,24 @@ const IMAGE_CACHE_MAX = 300 * 1024 * 1024
 /** Vidéo YouTube de la fiche (null si aucune, ou si l'identifiant reçu n'en est pas un). */
 function youtubeId(r: RemoteDetail): string | null {
   return r.youtubeId && YOUTUBE_ID.test(r.youtubeId) ? r.youtubeId : null
+}
+
+/** Fichier téléchargé pour un pack : son archive, ou son paquet chiffré. */
+interface Download {
+  url: string
+  name: string
+  size: number
+  sha256: string
+}
+
+function downloadOf(r: RemoteDetail, apiUrl: string): Download | null {
+  if (r.encrypted) {
+    const p = r.encryptedPackage
+    if (!p?.size || !p.sha256 || !r.archiveName) return null
+    return { url: `${apiUrl}/packs/${r.id}/package`, name: `${r.archiveName.replace(/\.(zip|rar|7z)$/i, '')}.fpk`, size: p.size, sha256: p.sha256 }
+  }
+  if (!r.sha256 || !r.archiveSize || !r.archiveName) return null
+  return { url: `${apiUrl}/packs/${r.id}/download`, name: r.archiveName, size: r.archiveSize, sha256: r.sha256 }
 }
 
 export class Marketplace {
@@ -126,8 +150,9 @@ export class Marketplace {
       author: r.author,
       version: r.version,
       tags: r.tags,
-      archiveSize: r.archiveSize ?? 0,
+      archiveSize: (r.encrypted ? r.encryptedPackage?.size : r.archiveSize) ?? 0,
       sha256: r.sha256 ?? '',
+      protected: !!r.encrypted,
       downloadCount: r.downloadCount,
       publishedAt: r.publishedAt,
       updatedAt: r.updatedAt,
@@ -257,7 +282,8 @@ export class Marketplace {
 
   async install(id: string, report: Report, signal: AbortSignal, hooks: InstallHooks): Promise<InstallResult> {
     const remote = await this.remoteDetail(id)
-    if (!remote.sha256 || !remote.archiveSize || !remote.archiveName) throw new Error('Ce pack n’a pas encore d’archive.')
+    const download = downloadOf(remote, this.apiUrl)
+    if (!download || !remote.sha256 || !remote.archiveName) throw new Error('Ce pack n’a pas encore d’archive.')
     const lib = this.library()
     const index = await this.localIndex()
     const linked = index.get(remote.id) ?? null
@@ -268,18 +294,28 @@ export class Marketplace {
     }
     if (!linked) {
       // Même archive déjà ajoutée à la main : on la relie à sa fiche plutôt que de la télécharger à nouveau.
-      const duplicate = await lib.findDuplicate(remote.archiveName, remote.archiveSize)
+      const duplicate = await lib.findDuplicate(remote.archiveName, remote.archiveSize ?? 0)
       if (duplicate && !duplicate.marketplace) {
         await this.applyMetadata(duplicate, remote, false, report)
         return { packId: duplicate.id, name: duplicate.name, status: 'linked' }
       }
     }
 
-    const file = await this.download(remote, report, signal)
-    const imported = await lib.import(file, (p) => report(p.phase, p.current, p.total), signal, { skipDuplicateCheck: true })
+    const file = await this.download(remote, download, report, signal)
+    const onProgress = (p: ImportProgress): void => report(p.phase, p.current, p.total)
+    let imported: StoredManifest
+    if (remote.encrypted) {
+      report('Déverrouillage du pack', 0, 0)
+      const { packageId: expected, key } = await this.packageKey(remote.id)
+      if ((await packageId(file)) !== expected) {
+        await fs.rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined)
+        throw new Error('Le pack a été mis à jour pendant le téléchargement : relancez le téléchargement.')
+      }
+      imported = await lib.importPackage(file, key, { name: remote.archiveName, size: remote.archiveSize ?? 0 }, onProgress)
+    } else imported = await lib.import(file, onProgress, signal, { skipDuplicateCheck: true })
     await this.applyMetadata(imported, remote, true, report)
     await fs.rm(path.dirname(file), { recursive: true, force: true }).catch(() => undefined)
-    log.info(`Marketplace : ${remote.name} téléchargé (${formatBytes(remote.archiveSize)})`)
+    log.info(`Marketplace : ${remote.name} téléchargé (${formatBytes(download.size)}${remote.encrypted ? ', pack protégé' : ''})`)
     if (!linked) return { packId: imported.id, name: imported.name, status: 'added' }
 
     // Nouvelle version d'un pack déjà présent : même nom, même preset, mêmes réglages personnels.
@@ -287,13 +323,13 @@ export class Marketplace {
     next.name = linked.name
     if (linked.reshadePreset && (next.reshadePresets ?? []).includes(linked.reshadePreset)) next.reshadePreset = linked.reshadePreset
     await lib.save(next)
-    await copyUserConfigs(lib, linked.id, next.id)
+    await lib.copyUserConfigs(linked.id, next.id)
 
     if (hooks.activeId() === linked.id) {
       try {
         await hooks.apply(next.id, report)
         // Réglages modifiés pendant la dernière partie, récupérés au remplacement : repris pour la suite.
-        await copyUserConfigs(lib, linked.id, next.id)
+        await lib.copyUserConfigs(linked.id, next.id)
       } catch (err) {
         log.warn(`Nouvelle version de ${linked.name} non installée : ${(err as Error).message}`)
         return {
@@ -308,14 +344,23 @@ export class Marketplace {
     return { packId: next.id, name: next.name, status: 'updated' }
   }
 
-  /** Télécharge l'archive (avec reprise) puis vérifie son empreinte. */
-  private async download(remote: RemoteDetail, report: Report, signal: AbortSignal): Promise<string> {
+  /** Clé du paquet chiffré actuel d'un pack, et l'identifiant de ce paquet. */
+  async packageKey(id: string): Promise<{ packageId: string; key: Buffer }> {
+    const body = await this.get<{ packageId?: unknown; key?: unknown }>(`/packs/${encodeURIComponent(id)}/package/key`)
+    const key = typeof body.key === 'string' ? Buffer.from(body.key, 'base64') : null
+    if (typeof body.packageId !== 'string' || !/^[0-9a-f]{32}$/.test(body.packageId) || key?.length !== KEY_SIZE)
+      throw new Error('La Marketplace ne répond pas correctement (clé du pack invalide).')
+    return { packageId: body.packageId, key }
+  }
+
+  /** Télécharge l'archive ou le paquet chiffré (avec reprise) puis vérifie son empreinte. */
+  private async download(remote: RemoteDetail, d: Download, report: Report, signal: AbortSignal): Promise<string> {
     const dir = path.join(this.library().dir, '.downloads', remote.id)
-    const final = path.join(dir, safeFileName(remote.archiveName!))
+    const final = path.join(dir, safeFileName(d.name))
     const part = `${final}.part`
     const metaFile = path.join(dir, 'download.json')
-    const size = remote.archiveSize!
-    const sha = remote.sha256!
+    const size = d.size
+    const sha = d.sha256
 
     // Téléchargement d'une autre version du pack laissé en plan : on repart de zéro.
     const meta = await fs.readFile(metaFile, 'utf8').then((t) => JSON.parse(t) as { sha256?: string }).catch(() => null)
@@ -327,11 +372,12 @@ export class Marketplace {
 
     const already = (await fs.stat(part).catch(() => null))?.size ?? 0
     const free = await freeSpace(this.library().dir)
-    // L'archive, puis son contenu extrait (environ deux fois sa taille) pendant l'ajout à la bibliothèque.
-    const needed = size - already + size * 2.2
+    // L'archive, puis son contenu extrait (environ deux fois sa taille) pendant l'ajout à la bibliothèque ; un paquet
+    // chiffré n'est jamais extrait.
+    const needed = size - already + (remote.encrypted ? 0 : size * 2.2)
     if (free !== null && free < needed) throw new Error(`Pas assez de place sur le disque (${formatBytes(needed)} nécessaires).`)
 
-    const url = `${this.apiUrl}/packs/${remote.id}/download`
+    const url = d.url
     for (let attempt = 1; ; attempt++) {
       try {
         await this.fetchInto(url, part, size, sha, report, signal)
@@ -423,15 +469,6 @@ export class Marketplace {
     m.marketplace = { id: remote.id, slug: remote.slug, sha256: remote.sha256!, version: remote.version, downloadedAt: new Date().toISOString() }
     await lib.save(m)
   }
-}
-
-async function copyUserConfigs(lib: Library, from: string, to: string): Promise<void> {
-  const source = lib.userDir(from)
-  if (!(await exists(source))) return
-  await fs.cp(source, lib.userDir(to), { recursive: true, force: true })
-  const m = await lib.get(to)
-  m.userConfigCount = await lib.countUserConfigs(to)
-  await lib.save(m)
 }
 
 async function sha256File(file: string, signal?: AbortSignal): Promise<string> {

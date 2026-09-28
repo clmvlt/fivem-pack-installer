@@ -4,7 +4,8 @@ import { promises as fs } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import type { Destination, Insight } from '@shared/types'
-import { inspectPe, inspectRpf, parseVersion, versionAtLeast } from './binary'
+import { inspectRpfHead, parsePe, parseVersion, versionAtLeast, type PeInfo } from './binary'
+import type { PackContent } from './content'
 import { base, ext, PROXY_DLLS } from './knowledge'
 
 /** À incrémenter quand les vérifications changent : les packs déjà importés sont revérifiés. */
@@ -17,10 +18,13 @@ export interface InspectResult {
 
 const topLevel = (dest: Destination, dir: string): boolean => dest.root === 'fivem' && new RegExp(`^${dir}/[^/]+$`, 'i').test(dest.path)
 
-export async function inspectPack(contentDir: string, installMap: { rel: string; dest: Destination }[]): Promise<InspectResult> {
+export async function inspectPack(content: PackContent, installMap: { rel: string; dest: Destination }[]): Promise<InspectResult> {
   const insights: Insight[] = []
   let reshadeVersion: string | null = null
-  const abs = (rel: string): string => path.join(contentDir, ...rel.split('/'))
+  const pe = async (rel: string): Promise<PeInfo | null> => {
+    const buf = await content.read(rel)
+    return buf ? parsePe(buf) : null
+  }
 
   for (const { rel, dest } of installMap) {
     const name = base(rel)
@@ -33,9 +37,9 @@ export async function inspectPack(contentDir: string, installMap: { rel: string;
         continue
       }
       if (!topLevel(dest, 'plugins')) continue
-      const pe = await inspectPe(abs(rel))
-      const product = (pe?.productName ?? '').trim()
-      const v = parseVersion(pe?.productVersion ?? pe?.fileVersion ?? null)
+      const info = await pe(rel)
+      const product = (info?.productName ?? '').trim()
+      const v = parseVersion(info?.productVersion ?? info?.fileVersion ?? null)
       const vs = v.join('.')
       if (/^reshade$/i.test(product)) {
         reshadeVersion = vs || null
@@ -44,7 +48,7 @@ export async function inspectPack(contentDir: string, installMap: { rel: string;
         else if (versionAtLeast(v, [5])) insights.push({ rel, level: 'ok', title: `ReShade ${vs}`, text: 'Accepté par FiveM.' })
         else insights.push({ rel, level: 'ok', title: `ReShade ${vs}`, text: 'Accepté par FiveM.' })
       } else if (/^enbseries$/i.test(product)) {
-        const old = !versionAtLeast(v, [0, 3, 8, 7]) || /2019,\s*Boris/i.test(pe?.copyright ?? '')
+        const old = !versionAtLeast(v, [0, 3, 8, 7]) || /2019,\s*Boris/i.test(info?.copyright ?? '')
         insights.push(
           old
             ? { rel, level: 'bad', title: `ENBSeries ${vs}`, text: 'Trop ancien, refusé par FiveM.' }
@@ -65,17 +69,17 @@ export async function inspectPack(contentDir: string, installMap: { rel: string;
         insights.push({ rel, level: 'warn', title: name, text: 'Hors de plugins, FiveM ne le charge pas.' })
         continue
       }
-      const pe = await inspectPe(abs(rel))
-      if (!pe) continue
-      if (!pe.asiBuilds.length)
+      const info = await pe(rel)
+      if (!info) continue
+      if (!info.asiBuilds.length)
         insights.push({ rel, level: 'warn', title: name, text: 'Ne déclare aucune build : FiveM ne le chargera pas.' })
       else
         insights.push({
           rel,
           level: 'info',
           title: name,
-          text: `Builds ${pe.asiBuilds[0]} à ${pe.asiBuilds[pe.asiBuilds.length - 1]}.`,
-          builds: pe.asiBuilds
+          text: `Builds ${info.asiBuilds[0]} à ${info.asiBuilds[info.asiBuilds.length - 1]}.`,
+          builds: info.asiBuilds
         })
       continue
     }
@@ -85,7 +89,7 @@ export async function inspectPack(contentDir: string, installMap: { rel: string;
         insights.push({ rel, level: 'warn', title: name, text: 'Dans un sous-dossier de mods, ignoré par FiveM.' })
         continue
       }
-      const r = await inspectRpf(abs(rel))
+      const r = await inspectRpfHead((bytes) => content.head(rel, bytes))
       if (!r.valid) insights.push({ rel, level: 'bad', title: name, text: 'Archive RPF invalide, ignorée par FiveM.' })
       else if (r.encryption === 'AES' || r.encryption === 'NG' || r.encryption === 'UNKNOWN')
         insights.push({ rel, level: 'bad', title: name, text: 'Archive chiffrée, ignorée par FiveM.' })
@@ -119,6 +123,13 @@ export async function fixReshadeIni(file: string): Promise<number> {
   } catch {
     return 0
   }
+  const { text, changes } = fixReshadeIniText(raw)
+  if (changes) await fs.writeFile(file, text, 'utf8')
+  return changes
+}
+
+/** Voir {@link fixReshadeIni} : contenu corrigé et nombre de réglages corrigés. */
+export function fixReshadeIniText(raw: string): { text: string; changes: number } {
   const isAbs = (p: string): boolean => /^[a-zA-Z]:[\\/]/.test(p.trim()) || /^\\\\/.test(p.trim())
   let changes = 0
   const out = raw.split(/(\r?\n)/).map((line) => {
@@ -155,6 +166,5 @@ export async function fixReshadeIni(file: string): Promise<number> {
         return line
     }
   })
-  if (changes) await fs.writeFile(file, out.join(''), 'utf8')
-  return changes
+  return { text: out.join(''), changes }
 }

@@ -2,13 +2,14 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, Menu, nativeImage, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeImage, safeStorage, shell, systemPreferences } from 'electron'
 import type { AppState, GamesInfo, Overview, PackPatch, RootId, Settings, TaskProgress } from '@shared/types'
 import type { ComponentFile, ForeignSelection, MarketQuery, PackManagerApi } from '@shared/api'
 import { IPC } from '@shared/api'
 import { detectGames, inspectFiveM, inspectGta, normalizeFiveMPath } from './core/games'
 import { Installer, type Report } from './core/installer'
 import { FPS_LIMIT_MAX, FPS_LIMIT_MIN } from './core/enb'
+import { KeyRing } from './core/keys'
 import { Library, toPublic } from './core/library'
 import { GraphicsManager } from './core/graphics'
 import { Marketplace } from './core/marketplace'
@@ -35,12 +36,23 @@ export class Service {
   private gamesCache: GamesInfo | null = null
   private foreignCache: Overview['foreign'] | undefined
   private running: { id: string; abort: AbortController } | null = null
+  /** Clés des packs protégés : clé locale gardée chiffrée par Windows (DPAPI), clés des paquets remises par l'API. */
+  private keys: KeyRing
 
   constructor(
     public dataDir: string,
     private getWindow: () => BrowserWindow | null,
     public apiUrl: string
   ) {
+    this.keys = new KeyRing(
+      path.join(dataDir, 'protection.key'),
+      {
+        available: () => safeStorage.isEncryptionAvailable(),
+        protect: (data) => safeStorage.encryptString(data.toString('base64')),
+        unprotect: (data) => Buffer.from(safeStorage.decryptString(data), 'base64')
+      },
+      (marketId) => this.marketplace.packageKey(marketId)
+    )
     this.settings = new JsonStore(path.join(dataDir, 'settings.json'), defaultSettings(dataDir))
     this.state = new JsonStore(path.join(dataDir, 'state.json'), emptyState())
     this.graphics = new GraphicsManager(path.join(dataDir, 'Graphismes'))
@@ -56,7 +68,7 @@ export class Service {
   async init(): Promise<void> {
     await this.settings.load(defaultSettings(this.dataDir))
     await this.state.load(emptyState())
-    this.library = new Library(this.settings.get().libraryDir)
+    this.library = new Library(this.settings.get().libraryDir, this.keys)
     await this.library.cleanupStaging()
     this.installer = new Installer({
       jobsDir: path.join(this.dataDir, 'jobs'),
@@ -304,6 +316,7 @@ export class Service {
     },
 
     openPackFolder: async (id: string) => {
+      if ((await this.library.get(id)).protection) throw this.toError('Pack protégé : ses fichiers restent chiffrés dans la bibliothèque.')
       if (await shell.openPath(this.library.contentDir(id))) throw this.toError('Impossible d’ouvrir ce dossier.')
     },
 
@@ -425,7 +438,7 @@ export class Service {
           await moveDir(this.library.packDir(packs[i].id), dest)
         }
         await this.settings.patch({ libraryDir: target })
-        this.library = new Library(target)
+        this.library = new Library(target, this.keys)
         await fs.rm(path.join(oldDir, '.staging'), { recursive: true, force: true }).catch(() => undefined)
         return { moved: packs.length }
       })
@@ -438,12 +451,13 @@ export class Service {
     packMenu: async (id: string) => {
       const w = this.getWindow()
       const isActive = this.state.get().active?.packId === id
+      const isProtected = !!(await this.library.get(id).catch(() => null))?.protection
       return new Promise<'rename' | 'image' | 'open' | 'delete' | null>((resolve) => {
         let choice: 'rename' | 'image' | 'open' | 'delete' | null = null
         const menu = Menu.buildFromTemplate([
           { label: 'Renommer', click: () => (choice = 'rename') },
           { label: 'Changer l’image…', click: () => (choice = 'image') },
-          { label: 'Ouvrir le dossier', click: () => (choice = 'open') },
+          { label: 'Ouvrir le dossier', enabled: !isProtected, click: () => (choice = 'open') },
           { type: 'separator' },
           { label: 'Supprimer', enabled: !isActive, click: () => (choice = 'delete') }
         ])

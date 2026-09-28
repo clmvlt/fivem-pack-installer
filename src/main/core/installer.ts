@@ -6,6 +6,10 @@
 //   3. les fichiers du nouveau pack sont installés ;
 //   4. le dossier temporaire est supprimé.
 // Au moindre échec, tout est remis en place. Une seule demande d'autorisation administrateur au plus.
+//
+// Pack protégé : chaque fichier est déchiffré directement à sa place dans le jeu (opération « unseal ») ; les réglages
+// modifiés en jeu et les fichiers générés sont chiffrés dans la bibliothèque. Retiré du jeu, il ne reste de lui aucun
+// fichier en clair sur le disque.
 
 import { promises as fs } from 'node:fs'
 import os from 'node:os'
@@ -29,7 +33,9 @@ import {
 } from './reshade'
 import { isEnbLocal, withEnbFpsLimit, withPackFpsLimit } from './enb'
 import { CONFIG_EXT, ext, isAllowedFiveMPath, isProtectedGtaPath } from './knowledge'
+import { readSource, type PackContent } from './content'
 import type { Library, StoredManifest } from './library'
+import type { SealedRef } from './sealed'
 import { JsonStore, pushHistory } from './stores'
 import { canWrite, dirSize, exists, formatBytes, freeSpace, newId, sameVolume } from '../util/fsx'
 import { runningGameProcesses } from '../util/win'
@@ -50,6 +56,8 @@ export interface InstallerCtx {
 
 interface InstallItem {
   src: string
+  /** Pack protégé : flux chiffré dans {@link src}, déchiffré à l'installation. */
+  sealed?: SealedRef
   source: string
   dest: Destination
   size: number
@@ -98,24 +106,37 @@ export class Installer {
   }
 
   /** Fichiers à installer ; un réglage modifié en jeu (dossier user/) remplace l'original. */
-  private async installItems(m: StoredManifest): Promise<InstallItem[]> {
+  private async installItems(m: StoredManifest, content: PackContent): Promise<InstallItem[]> {
     const lib = this.ctx.library()
     const sizes = new Map(m.files.map((f) => [f.rel, f.size]))
     const out: InstallItem[] = []
     for (const { rel, dest } of resolveInstallMap(m.components)) {
-      const userFile = lib.userFile(m.id, dest)
-      if (await exists(userFile)) {
-        const st = await fs.stat(userFile)
-        out.push({ src: userFile, source: path.relative(lib.packDir(m.id), userFile), dest, size: st.size, fromUser: true })
-      } else {
-        out.push({ src: abs(lib.contentDir(m.id), rel), source: `content/${rel}`, dest, size: sizes.get(rel) ?? 0, fromUser: false })
-      }
+      const user = await lib.userSource(m, dest)
+      if (user) out.push({ src: user.src, sealed: user.sealed, source: path.relative(lib.packDir(m.id), user.src), dest, size: user.size, fromUser: true })
+      else out.push({ ...content.source(rel), source: `content/${rel}`, dest, size: sizes.get(rel) ?? 0, fromUser: false })
     }
     return out
   }
 
   private canLink(it: InstallItem, rootPath: string): boolean {
-    return !it.fromUser && !CONFIG_EXT.has(ext(it.dest.path)) && sameVolume(it.src, rootPath)
+    return !it.fromUser && !it.sealed && !CONFIG_EXT.has(ext(it.dest.path)) && sameVolume(it.src, rootPath)
+  }
+
+  /** Copie, lien physique, ou déchiffrement (pack protégé) du fichier à sa place dans le jeu. */
+  private placeOp(it: InstallItem, rootPath: string): Op {
+    const to = abs(rootPath, it.dest.path)
+    if (it.sealed) return { t: 'unseal', from: it.src, ...it.sealed, to, size: it.size }
+    return { t: 'place', from: it.src, to, link: this.canLink(it, rootPath), size: it.size }
+  }
+
+  /**
+   * Garde un réglage modifié en jeu. Pack protégé : chiffré tout de suite dans la bibliothèque (jamais en clair) ; sinon
+   * copié par le plan.
+   */
+  private async keepUserFile(pack: StoredManifest, dest: Destination, from: string, size: number, ops: Op[]): Promise<void> {
+    const lib = this.ctx.library()
+    if (pack.protection) await lib.sealUserFile(pack, dest, from)
+    else ops.push({ t: 'copyOut', from, to: lib.userFile(pack.id, dest), size })
   }
 
   /** Raisons d'empêcher l'installation, en une phrase courte chacune. */
@@ -195,7 +216,8 @@ export class Installer {
     const games = await this.ctx.detectGames()
     const manifest = packId ? await lib.get(packId) : null
     const active = this.state.active
-    let items = manifest ? await this.installItems(manifest) : []
+    const content = manifest ? await lib.content(manifest) : null
+    let items = manifest && content ? await this.installItems(manifest, content) : []
     const blockers = manifest ? await this.blockers(items, games) : games.runningProcesses.length ? ['Fermez FiveM avant de continuer.'] : []
     if (blockers.length) throw new Error(blockers[0])
 
@@ -215,7 +237,7 @@ export class Installer {
         if (!st) continue
         const modified = st.size !== f.size || Math.abs(st.mtimeMs - f.mtimeMs) > 1
         if (modified && oldPack) {
-          ops.push({ t: 'copyOut', from: target, to: lib.userFile(oldPack.id, { root: f.root, path: f.path }), size: st.size })
+          await this.keepUserFile(oldPack, { root: f.root, path: f.path }, target, st.size, ops)
           saved.add(destKey({ root: f.root, path: f.path }))
         }
         const trash = path.join(rp, `${TRASH_PREFIX}${id}`)
@@ -224,18 +246,28 @@ export class Installer {
       }
       // Réappliquer le même pack : les réglages qu'on vient de sauvegarder sont réinstallés.
       if (manifest && oldPack?.id === manifest.id && saved.size) {
-        items = items.map((it) =>
-          saved.has(destKey(it.dest)) ? { ...it, src: lib.userFile(manifest.id, it.dest), fromUser: true, source: path.relative(lib.packDir(manifest.id), lib.userFile(manifest.id, it.dest)) } : it
-        )
+        const next: InstallItem[] = []
+        for (const it of items) {
+          if (!saved.has(destKey(it.dest))) next.push(it)
+          else if (manifest.protection) {
+            // Déjà chiffré dans la bibliothèque (voir keepUserFile).
+            const user = await lib.userSource(manifest, it.dest)
+            next.push(user ? { ...it, src: user.src, sealed: user.sealed, size: user.size, fromUser: true, source: path.relative(lib.packDir(manifest.id), user.src) } : it)
+          } else {
+            const file = lib.userFile(manifest.id, it.dest)
+            next.push({ ...it, src: file, fromUser: true, source: path.relative(lib.packDir(manifest.id), file) })
+          }
+        }
+        items = next
       }
     }
 
     // Preset ReShade du pack : ReShade.ini pointe dessus, sans passer par le menu de ReShade en jeu ; avec QuantV,
     // il est aussi recopié dans QuantV.preset.ini, le preset que QuantV impose à ReShade.
     if (manifest) items = await this.withPreset(manifest, items, roots)
-    if (manifest) items = await this.withQuantvPreset(manifest, items)
+    if (manifest && content) items = await this.withQuantvPreset(manifest, items, content)
     // Limite d'images par seconde choisie dans l'application : écrite dans l'enblocal.ini (ENB) du pack.
-    if (manifest) items = await this.withFpsLimit(manifest, items)
+    if (manifest && content) items = await this.withFpsLimit(manifest, items, content)
 
     // 2) Mods installés à la main et fichiers qui seraient écrasés : rangés dans « Ancienne installation ».
     const managed = managedSet(active)
@@ -268,7 +300,7 @@ export class Installer {
     }
     const placeIdx: { idx: number; item: InstallItem }[] = []
     for (const it of items) {
-      ops.push({ t: 'place', from: it.src, to: abs(roots[it.dest.root], it.dest.path), link: this.canLink(it, roots[it.dest.root]), size: it.size })
+      ops.push(this.placeOp(it, roots[it.dest.root]))
       placeIdx.push({ idx: ops.length - 1, item: it })
     }
 
@@ -345,7 +377,7 @@ export class Installer {
       if (!st) continue
       // Fichier modifié en jeu (preset ReShade...) : gardé dans le pack pour la prochaine fois.
       if ((st.size !== f.size || Math.abs(st.mtimeMs - f.mtimeMs) > 1) && pack)
-        ops.push({ t: 'copyOut', from: target, to: lib.userFile(pack.id, { root: f.root, path: f.path }), size: st.size })
+        await this.keepUserFile(pack, { root: f.root, path: f.path }, target, st.size, ops)
       ops.push({ t: 'remove', path: target })
       fileOps.push({ file: f, idx: ops.length - 1 })
     }
@@ -411,34 +443,31 @@ export class Installer {
     if (!presetDest || presetDest.root !== 'fivem' || !/^plugins\//i.test(presetDest.path)) return items
     const value = presetIniValue(presetDest.path)
     const idx = items.findIndex((i) => i.dest.root === 'fivem' && i.dest.path.toLowerCase() === RESHADE_INI_DEST)
-    const read = async (...files: string[]): Promise<string | null> => {
-      for (const f of files) {
-        const c = await fs.readFile(f, 'utf8').catch(() => null)
-        if (c !== null) return c
-      }
-      return null
-    }
     let content: string
     if (idx >= 0) {
       // Réinstallation du même pack : le réglage personnel n'est copié qu'au cours de l'opération, on lit donc le fichier en place.
-      content = (await read(items[idx].src, abs(roots.fivem, items[idx].dest.path))) ?? ''
+      content = (await this.readItem(items[idx])) ?? (await fs.readFile(abs(roots.fivem, items[idx].dest.path), 'utf8').catch(() => null)) ?? ''
     } else if (manifest.reshadeVersion) {
-      content = (await read(lib.userFile(manifest.id, { root: 'fivem', path: 'plugins/ReShade.ini' }))) ?? defaultReshadeIni(value)
+      const saved = await lib.readUserFile(manifest, { root: 'fivem', path: 'plugins/ReShade.ini' })
+      content = saved?.toString('utf8') ?? defaultReshadeIni(value)
     } else return items
     let next = iniSet(content, 'GENERAL', 'PresetPath', value)
     next = iniSet(next, 'GENERAL', 'StartupPresetPath', value)
     if (idx >= 0 && next === content) return items
-    const generated = path.join(lib.packDir(manifest.id), 'generated', 'ReShade.ini')
-    await fs.mkdir(path.dirname(generated), { recursive: true })
-    await fs.writeFile(generated, next, 'utf8')
+    const generated = await lib.writeGenerated(manifest, 'ReShade.ini', Buffer.from(next, 'utf8'))
     const item: InstallItem = {
-      src: generated,
-      source: 'generated/ReShade.ini',
+      ...generated,
       dest: { root: 'fivem', path: idx >= 0 ? items[idx].dest.path : 'plugins/ReShade.ini' },
-      size: Buffer.byteLength(next),
       fromUser: true
     }
     return idx >= 0 ? items.map((it, i) => (i === idx ? item : it)) : [...items, item]
+  }
+
+  /** Contenu d'un fichier à installer ({@link encoding} : utf8 par défaut) ; null s'il est illisible. */
+  private async readItem(it: InstallItem, encoding: BufferEncoding = 'utf8'): Promise<string | null> {
+    return readSource(it)
+      .then((b) => b.toString(encoding))
+      .catch(() => null)
   }
 
   /**
@@ -446,7 +475,7 @@ export class Installer {
    * fichier reçoit donc le preset choisi pour le pack, avec les effets et réglages QuantV qui lui manqueraient. Les
    * retouches faites en jeu sur cette copie sont gardées tant que le preset choisi reste le même.
    */
-  private async withQuantvPreset(manifest: StoredManifest, items: InstallItem[]): Promise<InstallItem[]> {
+  private async withQuantvPreset(manifest: StoredManifest, items: InstallItem[], pack: PackContent): Promise<InstallItem[]> {
     const isFivem = (it: InstallItem, dest: string): boolean => it.dest.root === 'fivem' && it.dest.path.toLowerCase() === dest
     if (!manifest.reshadePreset || !items.some((it) => isFivem(it, QUANTV_ADDON_DEST))) return items
     const map = resolveInstallMap(manifest.components)
@@ -455,26 +484,22 @@ export class Installer {
     const idx = items.findIndex((it) => isFivem(it, QUANTV_PRESET_DEST))
     if (idx >= 0 && items[idx].fromUser && manifest.quantvPresetFrom === manifest.reshadePreset) return items
     const presetItem = items.find((it) => isFivem(it, presetDest.path.toLowerCase()))
-    const preset = presetItem ? await fs.readFile(presetItem.src, 'utf8').catch(() => null) : null
+    const preset = presetItem ? await this.readItem(presetItem) : null
     if (preset === null) return items
     // Réglages QuantV fournis par le pack lui-même (et non une copie générée ou retouchée auparavant).
     const lib = this.ctx.library()
     const packQuantv = map.find((m) => m.dest.root === 'fivem' && m.dest.path.toLowerCase() === QUANTV_PRESET_DEST)
-    const quantvBase = packQuantv ? await fs.readFile(abs(lib.contentDir(manifest.id), packQuantv.rel), 'utf8').catch(() => null) : null
+    const quantvBase = packQuantv ? ((await pack.read(packQuantv.rel))?.toString('utf8') ?? null) : null
     const content = mergeQuantvPreset(preset, quantvBase)
-    const generated = path.join(lib.packDir(manifest.id), 'generated', 'QuantV.preset.ini')
-    await fs.mkdir(path.dirname(generated), { recursive: true })
-    await fs.writeFile(generated, content, 'utf8')
+    const generated = await lib.writeGenerated(manifest, 'QuantV.preset.ini', Buffer.from(content, 'utf8'))
     if (manifest.quantvPresetFrom !== manifest.reshadePreset) {
       manifest.quantvPresetFrom = manifest.reshadePreset
       await lib.save(manifest)
     }
     log.info(`Preset QuantV de ${manifest.name} : ${path.posix.basename(manifest.reshadePreset)}`)
     const item: InstallItem = {
-      src: generated,
-      source: 'generated/QuantV.preset.ini',
+      ...generated,
       dest: { root: 'fivem', path: idx >= 0 ? items[idx].dest.path : 'plugins/QuantV.preset.ini' },
-      size: Buffer.byteLength(content),
       fromUser: true
     }
     return idx >= 0 ? items.map((it, i) => (i === idx ? item : it)) : [...items, item]
@@ -484,7 +509,7 @@ export class Installer {
    * enblocal.ini du pack avec la limite d'images par seconde choisie dans l'application. Sans limite choisie (« celle
    * du pack »), le fichier d'origine reste tel quel, et une copie retouchée en jeu reprend la limite d'origine du pack.
    */
-  private async withFpsLimit(manifest: StoredManifest, items: InstallItem[]): Promise<InstallItem[]> {
+  private async withFpsLimit(manifest: StoredManifest, items: InstallItem[], pack: PackContent): Promise<InstallItem[]> {
     const limit = this.ctx.fpsLimit?.() ?? null
     const targets = items.filter((it) => isEnbLocal(it.dest.path) && (limit !== null || it.fromUser))
     if (!targets.length) return items
@@ -493,22 +518,20 @@ export class Installer {
     const out: InstallItem[] = []
     for (const it of items) {
       // latin1 : les octets du fichier sont gardés tels quels, quel que soit son encodage.
-      const content = targets.includes(it) ? await fs.readFile(it.src, 'latin1').catch(() => null) : null
+      const content = targets.includes(it) ? await this.readItem(it, 'latin1') : null
       let next: string | null = null
       if (content !== null && limit !== null) next = withEnbFpsLimit(content, limit)
       else if (content !== null) {
         const rel = map.find((m) => destKey(m.dest) === destKey(it.dest))?.rel
-        const original = rel ? await fs.readFile(abs(lib.contentDir(manifest.id), rel), 'latin1').catch(() => null) : null
+        const original = rel ? ((await pack.read(rel))?.toString('latin1') ?? null) : null
         if (original !== null) next = withPackFpsLimit(content, original)
       }
       if (next === null || next === content) {
         out.push(it)
         continue
       }
-      const generated = abs(path.join(lib.packDir(manifest.id), 'generated', 'fps', it.dest.root), it.dest.path)
-      await fs.mkdir(path.dirname(generated), { recursive: true })
-      await fs.writeFile(generated, next, 'latin1')
-      out.push({ ...it, src: generated, source: path.relative(lib.packDir(manifest.id), generated), size: Buffer.byteLength(next, 'latin1'), fromUser: true })
+      const generated = await lib.writeGenerated(manifest, `fps/${it.dest.root}/${it.dest.path}`, Buffer.from(next, 'latin1'))
+      out.push({ ...it, ...generated, fromUser: true })
     }
     log.info(`Limite d'images par seconde de ${manifest.name} : ${limit === null ? 'celle du pack' : limit > 0 ? limit : 'aucune'}`)
     return out
@@ -533,9 +556,13 @@ export class Installer {
       const target = abs(active.roots[f.root], f.path)
       const st = await fs.stat(target).catch(() => null)
       if (!st || (st.size === f.size && Math.abs(st.mtimeMs - f.mtimeMs) <= 1)) continue
-      const user = lib.userFile(manifest.id, { root: f.root, path: f.path })
-      await fs.mkdir(path.dirname(user), { recursive: true })
-      await fs.copyFile(target, user)
+      const dest = { root: f.root, path: f.path }
+      if (manifest.protection) await lib.sealUserFile(manifest, dest, target)
+      else {
+        const user = lib.userFile(manifest.id, dest)
+        await fs.mkdir(path.dirname(user), { recursive: true })
+        await fs.copyFile(target, user)
+      }
       kept++
     }
     if (kept) {
@@ -544,7 +571,8 @@ export class Installer {
     }
 
     const keys = new Set(targets.map((f) => destKey(f)))
-    const items = (await this.withFpsLimit(manifest, await this.installItems(manifest))).filter((it) => keys.has(destKey(it.dest)))
+    const content = await lib.content(manifest)
+    const items = (await this.withFpsLimit(manifest, await this.installItems(manifest, content), content)).filter((it) => keys.has(destKey(it.dest)))
     const id = newId('fps-')
     const ops: Op[] = []
     const trashDirs = new Set<string>()
@@ -554,7 +582,7 @@ export class Installer {
       const trash = path.join(rp, `${TRASH_PREFIX}${id}`)
       trashDirs.add(trash)
       ops.push({ t: 'stash', path: abs(rp, it.dest.path), to: abs(trash, it.dest.path), size: 0 })
-      ops.push({ t: 'place', from: it.src, to: abs(rp, it.dest.path), link: this.canLink(it, rp), size: it.size })
+      ops.push(this.placeOp(it, rp))
       placeIdx.push({ idx: ops.length - 1, item: it })
     }
     for (const t of trashDirs) ops.push({ t: 'rmTree', path: t, quiet: true })
@@ -576,7 +604,7 @@ export class Installer {
   /** Preset choisi dans le menu de ReShade en jeu : retenu pour les prochaines installations du pack. */
   private async syncPresetFromGame(pack: StoredManifest): Promise<void> {
     const lib = this.ctx.library()
-    const saved = await fs.readFile(lib.userFile(pack.id, { root: 'fivem', path: 'plugins/ReShade.ini' }), 'utf8').catch(() => null)
+    const saved = (await lib.readUserFile(pack, { root: 'fivem', path: 'plugins/ReShade.ini' }))?.toString('utf8')
     if (!saved) return
     const target = presetDestFromIni(iniGet(saved, 'PresetPath'))?.toLowerCase()
     const map = resolveInstallMap(pack.components)

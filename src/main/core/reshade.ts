@@ -1,9 +1,8 @@
 // Presets ReShade : ReShade charge le preset désigné par « PresetPath » dans ReShade.ini (dossier plugins sous FiveM).
 // Sans cette ligne, il faut ouvrir le menu de ReShade en jeu pour choisir le preset du pack.
 
-import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import type { Destination } from '@shared/types'
+import type { PackContent } from './content'
 import { base, ext } from './knowledge'
 
 export const RESHADE_INI_DEST = 'plugins/reshade.ini'
@@ -151,7 +150,7 @@ function sectionBlocks(content: string): { name: string; lines: string[] }[] {
 
 /** Presets ReShade d'un pack (fichiers .ini destinés à plugins et contenant « Techniques= »), et celui désigné par son ReShade.ini. */
 export async function detectPresets(
-  contentDir: string,
+  content: PackContent,
   installMap: { rel: string; dest: Destination }[]
 ): Promise<{ presets: string[]; fromIni: string | null }> {
   const presets: string[] = []
@@ -164,24 +163,15 @@ export async function detectPresets(
     }
     // Fichier de travail de QuantV (rempli à l'installation avec le preset choisi), pas un preset à proposer.
     if (dest.path.toLowerCase() === QUANTV_PRESET_DEST) continue
-    try {
-      const h = await fs.open(path.join(contentDir, ...rel.split('/')), 'r')
-      const buf = Buffer.alloc(64 * 1024)
-      const { bytesRead } = await h.read(buf, 0, buf.length, 0)
-      await h.close()
-      if (looksLikePreset(buf.subarray(0, bytesRead).toString('utf8'))) presets.push(rel)
-    } catch {
-      /* fichier illisible : ignoré */
-    }
+    // Fichier illisible : ignoré.
+    const head = await content.head(rel, 64 * 1024)
+    if (head && looksLikePreset(head.toString('utf8'))) presets.push(rel)
   }
   let fromIni: string | null = null
-  if (reshadeIni) {
-    try {
-      const target = presetDestFromIni(iniGet(await fs.readFile(path.join(contentDir, ...reshadeIni.split('/')), 'utf8'), 'PresetPath'))
-      fromIni = presets.find((p) => installMap.find((m) => m.rel === p)?.dest.path.toLowerCase() === target?.toLowerCase()) ?? null
-    } catch {
-      /* ignoré */
-    }
+  const ini = reshadeIni ? await content.read(reshadeIni) : null
+  if (ini) {
+    const target = presetDestFromIni(iniGet(ini.toString('utf8'), 'PresetPath'))
+    fromIni = presets.find((p) => installMap.find((m) => m.rel === p)?.dest.path.toLowerCase() === target?.toLowerCase()) ?? null
   }
   return { presets, fromIni }
 }

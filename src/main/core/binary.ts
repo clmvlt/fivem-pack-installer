@@ -3,8 +3,6 @@
 //  - .asi : depuis la build 2189, FiveM exige une ressource « FX_ASI_BUILD » déclarant la build du jeu.
 //  - .rpf du dossier mods : archive RPF7 non chiffrée (OPEN) ou signée Cfx (CFXP) contenant assembly.xml.
 
-import { promises as fs } from 'node:fs'
-
 // ---------------------------------------------------------------------------
 // PE (DLL / ASI)
 
@@ -76,13 +74,8 @@ function parseVersionStrings(data: Buffer): Record<string, string> {
   return out
 }
 
-export async function inspectPe(file: string): Promise<PeInfo | null> {
-  let buf: Buffer
-  try {
-    buf = await fs.readFile(file)
-  } catch {
-    return null
-  }
+/** {@link buf} : contenu entier du fichier. */
+export function parsePe(buf: Buffer): PeInfo | null {
   if (buf.length < 0x100 || buf.readUInt16LE(0) !== 0x5a4d) return null
   const pe = buf.readUInt32LE(0x3c)
   if (pe + 24 > buf.length || buf.readUInt32LE(pe) !== 0x00004550) return null
@@ -167,21 +160,22 @@ export interface RpfInfo {
   hasAssembly: boolean | null
 }
 
-export async function inspectRpf(file: string): Promise<RpfInfo> {
-  const h = await fs.open(file, 'r')
+/** {@link head} : premiers octets du fichier (moins s'il est plus court), null s'il est illisible. */
+export async function inspectRpfHead(head: (bytes: number) => Promise<Buffer | null>): Promise<RpfInfo> {
   try {
-    const head = Buffer.alloc(16)
-    const { bytesRead } = await h.read(head, 0, 16, 0)
-    if (bytesRead < 16 || head.readUInt32LE(0) !== 0x52504637) return { valid: false, encryption: 'UNKNOWN', hasAssembly: null }
-    const count = head.readUInt32LE(4)
-    const namesLen = head.readUInt32LE(8)
-    const enc = head.readUInt32LE(12)
+    const start = (await head(16)) ?? Buffer.alloc(0)
+    if (start.length < 16 || start.readUInt32LE(0) !== 0x52504637) return { valid: false, encryption: 'UNKNOWN', hasAssembly: null }
+    const count = start.readUInt32LE(4)
+    const namesLen = start.readUInt32LE(8)
+    const enc = start.readUInt32LE(12)
     const encryption: RpfEncryption =
       enc === 0x4e45504f ? 'OPEN' : enc === 0x50584643 ? 'CFXP' : enc === 0 ? 'NONE' : enc === 0x0ffffff9 ? 'AES' : enc === 0x0fefffff ? 'NG' : 'UNKNOWN'
     if (encryption !== 'OPEN' && encryption !== 'CFXP' && encryption !== 'NONE') return { valid: true, encryption, hasAssembly: null }
     if (count === 0 || count > 1_000_000 || namesLen > 64 * 1024 * 1024) return { valid: true, encryption, hasAssembly: false }
+    // Table des entrées et noms, juste après l'en-tête ; complétée par des zéros si le fichier est plus court.
     const toc = Buffer.alloc(count * 16 + namesLen)
-    await h.read(toc, 0, toc.length, 16)
+    const all = (await head(16 + toc.length)) ?? Buffer.alloc(0)
+    all.subarray(16).copy(toc)
     const names = toc.subarray(count * 16)
     const nameAt = (o: number): string => {
       const end = names.indexOf(0, o)
@@ -198,8 +192,6 @@ export async function inspectRpf(file: string): Promise<RpfInfo> {
     return { valid: true, encryption, hasAssembly }
   } catch {
     return { valid: false, encryption: 'UNKNOWN', hasAssembly: null }
-  } finally {
-    await h.close()
   }
 }
 

@@ -4,19 +4,27 @@
 //   <bibliothèque>/<id>/pack.json   manifeste (composants, destinations, fichiers)
 //   <bibliothèque>/<id>/content/    contenu extrait du pack (jamais modifié)
 //   <bibliothèque>/<id>/user/       réglages modifiés en jeu, conservés entre deux applications
+//   <bibliothèque>/<id>/generated/  fichiers écrits à l'installation (ReShade.ini pointé sur le preset choisi...)
 //   <bibliothèque>/<id>/cover-*.jpg image choisie pour le pack
+//
+// Pack protégé (chiffré sur la Marketplace) : rien n'est jamais extrait. content/ est remplacé par le paquet chiffré
+// reçu du serveur (content.fpk), gardé tel quel ; user/, generated/ et fixed/ (fichiers corrigés à l'import) sont
+// chiffrés avec la clé locale (voir keys.ts et sealed.ts). Le contenu n'est en clair que dans le jeu, une fois installé.
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import type { Destination, PackComponent, PackFileEntry, PackManifest, PackPatch, RootId } from '@shared/types'
 import { analyzePack, galleryOf, resolveInstallMap, type AnalyzedComponent } from './analyzer'
-import { fixReshadeIni, inspectPack, INSIGHTS_VERSION } from './inspect'
+import { folderContent, packageContent, readSource, type ContentSource, type PackContent } from './content'
+import { fixReshadeIni, fixReshadeIniText, inspectPack, INSIGHTS_VERSION } from './inspect'
+import type { PackKeys } from './keys'
 import { choosePreset, detectPresets } from './reshade'
 import { ARCHIVE_EXT, detectFeatures, ext, isJunk } from './knowledge'
+import { readPackageIndex, readSealedFile, sealedFileRef, sealFileFrom, unsealToBuffer, unwrapKey, wrapKey, writeSealedFile } from './sealed'
 import { dropJunk, stripWrapper } from './wrapper'
 import { extractInWorker } from '../archive'
-import { rarVolumeIndex } from '../archive/sanitize'
-import { exists, freeSpace, isDir, moveDir, newId, readJson, slugify, walkFiles, writeJsonAtomic, formatBytes } from '../util/fsx'
+import { rarVolumeIndex, sanitizeEntryPath } from '../archive/sanitize'
+import { exists, freeSpace, isDir, moveDir, moveFile, newId, readJson, slugify, walkFiles, writeJsonAtomic, formatBytes } from '../util/fsx'
 import { log } from '../util/log'
 import { q } from '../util/text'
 
@@ -26,7 +34,23 @@ export interface StoredManifest extends Omit<PackManifest, 'components'> {
   sourceSize: number
   /** Preset ReShade recopié dans QuantV.preset.ini à la dernière installation (retouches en jeu gardées tant qu'il ne change pas). */
   quantvPresetFrom?: string | null
+  /** Pack protégé : contenu gardé chiffré (content.fpk), jamais extrait. */
+  protection?: PackProtection
 }
+
+export interface PackProtection {
+  /** Identifiant du paquet (en-tête de content.fpk), celui dont le serveur remet la clé. */
+  packageId: string
+  /** Clé du paquet, chiffrée avec la clé locale. */
+  key: string
+  /** Dossier enveloppe retiré des chemins du paquet (voir stripWrapper). */
+  prefix: string
+  /** Fichiers corrigés à l'import (ReShade.ini de l'auteur), gardés chiffrés dans fixed/ et installés à la place. */
+  fixed: string[]
+}
+
+/** Fichier à installer, avec sa taille. */
+export type SizedSource = ContentSource & { size: number }
 
 export interface ImportProgress {
   phase: string
@@ -40,7 +64,11 @@ export class ImportError extends Error {}
 const MAX_NESTED_DEPTH = 3
 
 export class Library {
-  constructor(public dir: string) {}
+  /** {@link keys} : clés des packs protégés (sans elles, ces packs ne peuvent être ni ajoutés ni installés). */
+  constructor(
+    public dir: string,
+    private keys?: PackKeys
+  ) {}
 
   packDir(id: string): string {
     return path.join(this.dir, id)
@@ -48,11 +76,130 @@ export class Library {
   contentDir(id: string): string {
     return path.join(this.dir, id, 'content')
   }
+  /** Paquet chiffré d'un pack protégé. */
+  packageFile(id: string): string {
+    return path.join(this.dir, id, 'content.fpk')
+  }
   userDir(id: string): string {
     return path.join(this.dir, id, 'user')
   }
   userFile(id: string, dest: Destination): string {
     return path.join(this.userDir(id), dest.root, ...dest.path.split('/'))
+  }
+  private fixedFile(id: string, rel: string): string {
+    return path.join(this.dir, id, 'fixed', ...rel.split('/'))
+  }
+
+  // -------------------------------------------------------------------------
+  // Contenu, réglages et fichiers générés (en clair, ou chiffrés pour un pack protégé)
+
+  private localKey(): Promise<Buffer> {
+    if (!this.keys) throw new Error('Packs protégés indisponibles.')
+    return this.keys.local()
+  }
+
+  /** Clé du paquet d'un pack protégé ; redemandée au serveur si la clé locale a changé (autre PC, autre compte Windows). */
+  private async packageKey(m: StoredManifest): Promise<Buffer> {
+    const p = m.protection!
+    const local = await this.localKey()
+    const kept = unwrapKey(p.key, local)
+    if (kept) return kept
+    if (!m.marketplace) throw new Error('Clé de ce pack protégé introuvable.')
+    let fetched: { packageId: string; key: Buffer }
+    try {
+      fetched = await this.keys!.fetch(m.marketplace.id)
+    } catch (err) {
+      throw new Error(`Ce pack protégé doit être déverrouillé en ligne : ${(err as Error).message}`)
+    }
+    if (fetched.packageId !== p.packageId)
+      throw new Error('Une nouvelle version de ce pack est sur la Marketplace : mettez-le à jour pour pouvoir l’installer.')
+    p.key = wrapKey(fetched.key, local)
+    await this.save(m)
+    log.info(`Clé du pack protégé ${m.name} redemandée au serveur`)
+    return fetched.key
+  }
+
+  /** Contenu du pack : dossier extrait, ou paquet chiffré d'un pack protégé. */
+  async content(m: StoredManifest): Promise<PackContent> {
+    if (!m.protection) return folderContent(this.contentDir(m.id))
+    const index = await readPackageIndex(this.packageFile(m.id), await this.packageKey(m))
+    const local = await this.localKey()
+    const overrides = new Map<string, ContentSource>()
+    for (const rel of m.protection.fixed) {
+      // Illisible (clé locale changée) : le fichier d'origine du paquet est installé.
+      const s = await this.sealedSource(this.fixedFile(m.id, rel), local)
+      if (s) overrides.set(rel.toLowerCase(), s)
+    }
+    return packageContent(this.packageFile(m.id), index, m.protection.prefix, overrides)
+  }
+
+  /** Fichier chiffré localement et vérifié (petits fichiers : réglages) ; null s'il est absent ou illisible. */
+  private async sealedSource(file: string, local: Buffer): Promise<SizedSource | null> {
+    try {
+      const ref = await sealedFileRef(file, local)
+      return ref ? { src: file, sealed: ref, size: (await unsealToBuffer(file, ref)).length } : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Réglage modifié en jeu gardé pour ce pack ; null s'il n'y en a pas (ou s'il est illisible, pour un pack protégé). */
+  async userSource(m: StoredManifest, dest: Destination): Promise<SizedSource | null> {
+    const file = this.userFile(m.id, dest)
+    const st = await fs.stat(file).catch(() => null)
+    if (!st?.isFile()) return null
+    return m.protection ? this.sealedSource(file, await this.localKey()) : { src: file, size: st.size }
+  }
+
+  async readUserFile(m: StoredManifest, dest: Destination): Promise<Buffer | null> {
+    const s = await this.userSource(m, dest)
+    return s ? readSource(s).catch(() => null) : null
+  }
+
+  /** Garde un réglage modifié en jeu d'un pack protégé : chiffré, jamais en clair dans la bibliothèque. */
+  async sealUserFile(m: StoredManifest, dest: Destination, from: string): Promise<void> {
+    await sealFileFrom(from, this.userFile(m.id, dest), await this.localKey())
+  }
+
+  /** Écrit un fichier généré à l'installation (generated/<rel>), chiffré pour un pack protégé. */
+  async writeGenerated(m: StoredManifest, rel: string, data: Buffer): Promise<SizedSource & { source: string }> {
+    const file = path.join(this.packDir(m.id), 'generated', ...rel.split('/'))
+    const source = `generated/${rel}`
+    if (m.protection) {
+      const local = await this.localKey()
+      await writeSealedFile(file, data, local)
+      return { src: file, sealed: (await sealedFileRef(file, local))!, size: data.length, source }
+    }
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, data)
+    return { src: file, size: data.length, source }
+  }
+
+  /**
+   * Réglages modifiés en jeu repris par une nouvelle version du pack ; chiffrés ou déchiffrés si la nouvelle version
+   * est protégée et l'ancienne non, ou l'inverse.
+   */
+  async copyUserConfigs(fromId: string, toId: string): Promise<void> {
+    const source = this.userDir(fromId)
+    if (!(await exists(source))) return
+    const [from, to] = [await this.get(fromId), await this.get(toId)]
+    if (!!from.protection === !!to.protection) await fs.cp(source, this.userDir(toId), { recursive: true, force: true })
+    else {
+      const local = await this.localKey()
+      for (const f of await walkFiles(source)) {
+        const src = path.join(source, ...f.rel.split('/'))
+        const dst = path.join(this.userDir(toId), ...f.rel.split('/'))
+        if (to.protection) await sealFileFrom(src, dst, local)
+        else {
+          const data = await readSealedFile(src, local).catch(() => null)
+          if (!data) continue
+          await fs.mkdir(path.dirname(dst), { recursive: true })
+          await fs.writeFile(dst, data)
+        }
+      }
+    }
+    to.userConfigCount = await this.countUserConfigs(toId)
+    await this.save(to)
   }
 
   async list(): Promise<StoredManifest[]> {
@@ -64,9 +211,10 @@ export class Library {
       if (!m || m.id !== e.name) continue
       if (m.insightsVersion !== INSIGHTS_VERSION || !Array.isArray(m.gallery)) {
         await this.refreshInsights(m).catch(() => undefined)
-        // Les images de la Marketplace (market-*.jpg) ne viennent pas du contenu : conservées.
+        // Les images de la Marketplace (market-*.jpg) ne viennent pas du contenu : conservées. Celles d'un pack protégé
+        // restent dans son paquet chiffré.
         const market = (Array.isArray(m.gallery) ? m.gallery : []).filter((g) => /^market-/.test(g))
-        m.gallery = [...market, ...galleryOf(m.files, m.components).map((r) => `content/${r}`)]
+        m.gallery = [...market, ...(m.protection ? [] : galleryOf(m.files, m.components).map((r) => `content/${r}`))]
         await this.save(m).catch(() => undefined)
       }
       out.push(m)
@@ -114,11 +262,12 @@ export class Library {
   /** Recalcule les vérifications de compatibilité (elles dépendent des destinations choisies). */
   async refreshInsights(m: StoredManifest): Promise<void> {
     const map = resolveInstallMap(m.components)
-    const { insights, reshadeVersion } = await inspectPack(this.contentDir(m.id), map)
+    const content = await this.content(m)
+    const { insights, reshadeVersion } = await inspectPack(content, map)
     const notes = (m.insights ?? []).filter((i) => i.rel === '').map((i) => ({ ...i, title: 'ReShade.ini', text: RESHADE_FIXED }))
     m.insights = [...insights, ...notes]
     m.reshadeVersion = reshadeVersion
-    const { presets, fromIni } = await detectPresets(this.contentDir(m.id), map)
+    const { presets, fromIni } = await detectPresets(content, map)
     m.reshadePresets = presets
     // Le choix de l'utilisateur est conservé tant que ce preset existe encore dans le pack.
     if (!m.reshadePreset || !presets.includes(m.reshadePreset)) m.reshadePreset = choosePreset(presets, fromIni, m.name)
@@ -291,12 +440,12 @@ export class Library {
       if (!entries.length) throw new ImportError("L'archive est vide.")
 
       const { entries: stripped, prefix } = stripWrapper(entries)
-      const presets = await this.detectPresets(raw, prefix, stripped)
+      const contentSrc = prefix ? path.join(raw, ...prefix.replace(/\/$/, '').split('/')) : raw
+      const presets = await findPresets(folderContent(contentSrc), stripped)
       const analysis = analyzePack(stripped, { isPreset: (rel) => presets.has(rel) })
 
       const packDir = this.packDir(id)
       await fs.mkdir(packDir, { recursive: true })
-      const contentSrc = prefix ? path.join(raw, ...prefix.replace(/\/$/, '').split('/')) : raw
       await moveDir(contentSrc, this.contentDir(id))
 
 
@@ -395,19 +544,88 @@ export class Library {
     }
   }
 
-  private async detectPresets(raw: string, prefix: string, entries: PackFileEntry[]): Promise<Set<string>> {
-    const out = new Set<string>()
-    for (const e of entries) {
-      if (ext(e.rel) !== '.ini' || e.size > 2_000_000) continue
-      try {
-        const abs = path.join(raw, ...(prefix + e.rel).split('/'))
-        const head = (await fs.readFile(abs, 'utf8')).slice(0, 64_000)
-        if (/^\s*Techniques\s*=/im.test(head) || /^\s*\[[^\]]+\.fx\]\s*$/im.test(head)) out.add(e.rel)
-      } catch {
-        /* ignore */
-      }
+  /**
+   * Ajoute un pack protégé à partir de son paquet chiffré (téléchargé depuis la Marketplace, déjà vérifié) : le paquet est
+   * gardé tel quel (content.fpk, le fichier est déplacé) et rien n'est extrait ; l'analyse lit les fichiers utiles
+   * directement dans le paquet. {@link source} : archive dont le paquet est tiré (nom et taille, comme pour un import).
+   */
+  async importPackage(
+    file: string,
+    key: Buffer,
+    source: { name: string; size: number },
+    onProgress: (p: ImportProgress) => void
+  ): Promise<StoredManifest> {
+    onProgress({ phase: 'Lecture du pack', current: 0, total: 1 })
+    const index = await readPackageIndex(file, key)
+    // Chemins nettoyés comme à l'extraction d'une archive ; un doublon (casse ignorée, comme sous Windows) remplace le
+    // précédent.
+    const byRel = new Map<string, PackFileEntry>()
+    for (const e of index.entries) {
+      const rel = sanitizeEntryPath(e.path)
+      if (!rel) continue
+      byRel.delete(rel.toLowerCase())
+      byRel.set(rel.toLowerCase(), { rel, size: e.size })
     }
-    return out
+    const entries = dropJunk([...byRel.values()]).sort((a, b) => a.rel.localeCompare(b.rel))
+    if (!entries.length) throw new ImportError("L'archive est vide.")
+
+    onProgress({ phase: 'Analyse du pack', current: 0, total: 1 })
+    const { entries: stripped, prefix } = stripWrapper(entries)
+    const content = packageContent(file, index, prefix)
+    const presets = await findPresets(content, stripped)
+    const analysis = analyzePack(stripped, { isPreset: (rel) => presets.has(rel) })
+
+    const id = `${slugify(cleanName(source.name))}-${newId()}`
+    const local = await this.localKey()
+    const protection: PackProtection = { packageId: index.id, key: wrapKey(key, local), prefix, fixed: [] }
+    try {
+      // ReShade.ini exporté depuis le PC de l'auteur : copie corrigée, chiffrée, installée à la place de l'originale.
+      let fixedPaths = 0
+      for (const { rel } of resolveInstallMap(analysis.components)) {
+        if (!/(^|\/)reshade\.ini$/i.test(rel)) continue
+        const raw = await content.read(rel)
+        const { text, changes } = fixReshadeIniText(raw?.toString('utf8') ?? '')
+        if (!raw || !changes) continue
+        await writeSealedFile(this.fixedFile(id, rel), Buffer.from(text, 'utf8'), local)
+        protection.fixed.push(rel)
+        fixedPaths += changes
+      }
+      await moveFile(file, this.packageFile(id))
+
+      const now = new Date().toISOString()
+      const manifest: StoredManifest = {
+        schema: 1,
+        id,
+        name: cleanName(source.name),
+        sourceArchive: source.name,
+        sourceSize: source.size,
+        importedAt: now,
+        updatedAt: now,
+        contentSize: stripped.reduce((s, e) => s + e.size, 0),
+        fileCount: stripped.length,
+        components: analysis.components,
+        features: analysis.features,
+        warnings: analysis.warnings,
+        cover: null,
+        gallery: [],
+        notes: '',
+        captured: false,
+        userConfigCount: 0,
+        insights: [],
+        reshadeVersion: null,
+        files: stripped,
+        protection
+      }
+      onProgress({ phase: 'Vérification de la compatibilité FiveM', current: 0, total: 1 })
+      await this.refreshInsights(manifest)
+      if (fixedPaths) manifest.insights.push({ rel: '', level: 'info', title: 'ReShade.ini', text: RESHADE_FIXED })
+      await this.save(manifest)
+      log.info(`Pack protégé ajouté : ${manifest.name} (${manifest.fileCount} fichiers, ${formatBytes(manifest.contentSize)})`)
+      return manifest
+    } catch (err) {
+      await fs.rm(this.packDir(id), { recursive: true, force: true }).catch(() => undefined)
+      throw err
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -485,6 +703,18 @@ export class Library {
 const CAPTURE_TOP: Record<RootId, string> = { fivem: 'FiveM Application Data', gta: 'GTA V' }
 const RESHADE_FIXED = "Chemins du PC de l'auteur corrigés."
 
+/** Presets ReShade parmi les .ini du pack (avant l'analyse, pour la guider). */
+async function findPresets(content: PackContent, entries: PackFileEntry[]): Promise<Set<string>> {
+  const out = new Set<string>()
+  for (const e of entries) {
+    if (ext(e.rel) !== '.ini' || e.size > 2_000_000) continue
+    // Illisible : ignoré.
+    const head = (await content.head(e.rel, 256_000))?.toString('utf8').slice(0, 64_000)
+    if (head && (/^\s*Techniques\s*=/im.test(head) || /^\s*\[[^\]]+\.fx\]\s*$/im.test(head))) out.add(e.rel)
+  }
+  return out
+}
+
 export function cleanName(fileName: string): string {
   return (
     fileName
@@ -497,11 +727,12 @@ export function cleanName(fileName: string): string {
 
 /** Version « publique » du manifeste envoyée à l'interface (sans les listes de fichiers). */
 export function toPublic(m: StoredManifest): PackManifest {
-  const { files: _files, sourceSize: _s, components, ...rest } = m
+  const { files: _files, sourceSize: _s, protection, components, ...rest } = m
   void _files
   void _s
   return {
     ...rest,
+    protected: !!protection,
     components: components.map(({ files: _f, stripPrefix: _p, ...c }) => {
       void _f
       void _p

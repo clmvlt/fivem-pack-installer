@@ -98,6 +98,11 @@ export interface PackManifest {
   author?: string
   /** Vidéo YouTube de la fiche Marketplace (absent : pack téléchargé avant la version 1.5.2). */
   youtubeId?: string | null
+  /**
+   * Pack protégé (chiffré sur la Marketplace) : son contenu reste chiffré dans la bibliothèque et n'est en clair que
+   * dans les dossiers du jeu, pendant qu'il y est installé.
+   */
+  protected?: boolean
 }
 
 /** Lien entre un pack de la bibliothèque et sa fiche sur la Marketplace. */
@@ -296,8 +301,11 @@ export interface MarketPack {
   author: string
   version: string
   tags: string[]
+  /** Taille du téléchargement (le paquet chiffré pour un pack protégé). */
   archiveSize: number
   sha256: string
+  /** Pack protégé : installable seulement avec l'application, jamais extrait dans la bibliothèque. */
+  protected: boolean
   downloadCount: number
   publishedAt: string | null
   updatedAt: string
