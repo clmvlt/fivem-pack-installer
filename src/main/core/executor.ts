@@ -4,12 +4,18 @@
 import { constants as fsc, promises as fs } from 'node:fs'
 import path from 'node:path'
 import { moveDir, moveFile } from '../util/fsx'
+import { unsealToFile } from './sealed'
 
 export type Op =
   /** Crée un dossier s'il n'existe pas (le résultat indique s'il a été créé). */
   | { t: 'mkdir'; path: string }
   /** Copie (ou lien physique) d'un fichier de la bibliothèque vers le jeu. Échoue si la destination existe. */
   | { t: 'place'; from: string; to: string; link: boolean; size: number }
+  /**
+   * Fichier d'un pack protégé déchiffré directement à sa place dans le jeu (flux « offset/length » de « from », voir
+   * sealed.ts ; la clé ne déchiffre que ce fichier). Échoue si la destination existe.
+   */
+  | { t: 'unseal'; from: string; offset: number; length: number; key: string; to: string; size: number }
   /** Supprime un fichier installé par l'application (absent = succès). */
   | { t: 'remove'; path: string }
   /** Déplace un fichier ou dossier vers la zone de sauvegarde (absent = ignoré). */
@@ -61,6 +67,7 @@ const opBytes = (op: Op): number => ('size' in op ? op.size : 0)
 const opLabel = (op: Op): string => {
   switch (op.t) {
     case 'place':
+    case 'unseal':
     case 'remove':
     case 'rmdirIfEmpty':
     case 'rmTree':
@@ -127,6 +134,11 @@ async function runOp(op: Op): Promise<Omit<OpResult, 'i'>> {
         }
       }
       await fs.copyFile(op.from, op.to, fsc.COPYFILE_EXCL)
+      return { ok: true, linked: false, ...(await statOf(op.to)) }
+    }
+    case 'unseal': {
+      await fs.mkdir(path.dirname(op.to), { recursive: true })
+      await unsealToFile(op.from, { offset: op.offset, length: op.length, key: op.key }, op.to)
       return { ok: true, linked: false, ...(await statOf(op.to)) }
     }
     case 'remove': {
@@ -199,6 +211,7 @@ async function undoOp(op: Op, res: OpResult): Promise<void> {
       if (res.created) await fs.rmdir(op.path).catch(() => undefined)
       return
     case 'place':
+    case 'unseal':
       await fs.unlink(op.to).catch(() => undefined)
       return
     case 'stash': {
