@@ -3,6 +3,10 @@ import type { PackManifest, TaskProgress } from '@shared/types'
 import { useStore } from '../store'
 import { bytes, mediaUrl, packImages, q } from '../lib/format'
 
+/** Explication d'un pack protégé (chiffré sur la Marketplace). */
+export const PROTECTED_HINT =
+  'Pack protégé : il reste chiffré dans votre bibliothèque. Ses fichiers ne sont lisibles que dans le jeu, pendant qu’il y est installé.'
+
 const TASK_LABEL: Partial<Record<TaskProgress['kind'], string>> = {
   apply: 'Installation',
   remove: 'Retrait',

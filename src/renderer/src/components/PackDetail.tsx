@@ -4,7 +4,7 @@ import type { ComponentFile } from '@shared/api'
 import { useStore } from '../store'
 import { bytes, mediaUrl, packImages } from '../lib/format'
 import { asiBuildText, LEVEL_LABEL, levelOf, type Level } from '@shared/insights'
-import { Cover, packMenuAction, Progress, RenameInput } from './common'
+import { Cover, packMenuAction, Progress, PROTECTED_HINT, RenameInput } from './common'
 import { Gallery } from './Gallery'
 import { Markdown } from './Markdown'
 
@@ -161,9 +161,10 @@ export function PackDetail({ pack, onBack }: { pack: PackManifest; onBack: () =>
           </dl>
 
           {gone && <p className="hint">Ce pack n’est plus proposé sur la Marketplace. Votre copie reste utilisable.</p>}
+          {pack.protected && <p className="hint">{PROTECTED_HINT}</p>}
 
           <div className="side-links">
-            <button onClick={() => void run(() => window.api.openPackFolder(pack.id))}>Ouvrir le dossier</button>
+            {!pack.protected && <button onClick={() => void run(() => window.api.openPackFolder(pack.id))}>Ouvrir le dossier</button>}
             <button
               className="more"
               aria-label="Plus d’options"

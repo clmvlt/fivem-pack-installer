@@ -5,7 +5,7 @@ import { cleanError, useStore } from '../store'
 import { bytes, marketImageUrl } from '../lib/format'
 import { Gallery } from './Gallery'
 import { Markdown } from './Markdown'
-import { Progress } from './common'
+import { Progress, PROTECTED_HINT } from './common'
 
 /** État d'un pack de la Marketplace par rapport à la bibliothèque. */
 function localState(item: { id: string; sha256: string }, library: PackManifest[]): { local: PackManifest | null; update: boolean } {
@@ -152,7 +152,7 @@ function MarketCard({
         <div className="name" title={item.name}>
           {item.name}
         </div>
-        <div className="meta">{[item.author, item.tags.slice(0, 3).join(', '), bytes(item.archiveSize)].filter(Boolean).join(' · ')}</div>
+        <div className="meta">{[item.author, item.tags.slice(0, 3).join(', '), bytes(item.archiveSize), item.protected && 'protégé'].filter(Boolean).join(' · ')}</div>
         <div className="card-foot" onClick={(e) => e.stopPropagation()}>
           {mine ? <Progress task={mine} /> : <MarketAction item={item} library={library} task={task} onOpenLocal={onOpenLocal} />}
         </div>
@@ -270,6 +270,7 @@ function MarketDetail({ id, onBack, onOpenLocal }: { id: string; onBack: () => v
             {mine ? <Progress task={mine} /> : <MarketAction item={pack} library={overview.library} task={task} onOpenLocal={onOpenLocal} wide />}
           </div>
           {update && !mine && <p className="hint">Une nouvelle version est en ligne. Vos réglages et votre preset ReShade sont conservés.</p>}
+          {pack.protected && <p className="hint">{PROTECTED_HINT}</p>}
           <dl className="facts">
             <dt>Taille</dt>
             <dd>{bytes(pack.archiveSize)}</dd>
