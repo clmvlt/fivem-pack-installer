@@ -10,6 +10,7 @@ Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReSh
 
 - **Bibliothèque** : vos packs en cartes avec leur image. Glissez une archive `.zip`, `.rar` ou `.7z` (ou un dossier) dans la fenêtre, ou cliquez sur « Ajouter un pack… ». « Installer » met le pack en place ; le pack installé auparavant est retiré automatiquement. « Retirer » remet le jeu dans son état d'origine.
 - **Marketplace** : les packs publiés sur [packs.dimzou.fr](https://packs.dimzou.fr). « Télécharger » ajoute le pack à la bibliothèque avec son nom, ses images et sa description ; il s'installe ensuite comme les autres. Quand l'auteur publie une nouvelle version, « Mettre à jour » la télécharge, garde vos réglages et votre preset ReShade, et la met en place si l'ancienne était installée.
+- **Packs protégés** : un pack chiffré sur la Marketplace ne se télécharge pas depuis le site. L'application reçoit un paquet chiffré qu'elle garde tel quel dans la bibliothèque, sans jamais l'extraire : chaque fichier est déchiffré directement à sa place dans le jeu à l'installation. Ses réglages modifiés en jeu sont gardés chiffrés. Une fois le pack retiré du jeu, il n'en reste aucun fichier en clair (ni archive, ni dossier extrait) ; « Ouvrir le dossier » n'est pas proposé.
 - **Fiche d'un pack** (clic sur une carte) : images et vidéo YouTube de présentation (packs de la Marketplace, lue dans l'application), informations, compatibilité FiveM (version de ReShade et d'ENB, builds déclarées par les `.asi`, validité des `.rpf`), contenu et destination de chaque partie, liste des fichiers.
 - **Preset ReShade** : l'application repère les presets du pack et fait pointer `ReShade.ini` sur le bon à chaque installation (celui prévu par l'auteur, ou celui choisi dans la fiche du pack). Plus besoin de l'ouvrir en jeu. Un preset choisi dans le menu de ReShade en jeu est retenu pour les fois suivantes. Avec QuantV, qui impose à ReShade son fichier `QuantV.preset.ini`, le preset choisi y est aussi recopié (avec les effets QuantV s'ils manquent) ; les réglages QuantV retouchés en jeu sont gardés tant que le preset ne change pas.
 - **Images** : celles fournies dans le pack, sinon la dernière capture ReShade prise pendant que le pack était installé. « Changer l'image… » permet d'en choisir une.
@@ -41,6 +42,8 @@ Les mods installés à la main avant l'application apparaissent sur la carte « 
 
 `%LOCALAPPDATA%\FiveM Pack Manager\` : bibliothèque de packs (`Bibliotheque\`), `settings.json`, `state.json`, `logs\`, cache des images de la Marketplace (`Marketplace\`). Le dossier des packs peut être déplacé depuis « Réglages ». Un téléchargement interrompu reprend là où il s'était arrêté (`Bibliotheque\.downloads\`).
 
+Packs protégés : `Bibliotheque\<pack>\content.fpk` (paquet chiffré reçu du serveur) remplace le dossier `content\`. `protection.key` est la clé locale de ce PC, chiffrée par Windows pour votre compte (DPAPI) : elle chiffre les réglages des packs protégés et la clé de leur paquet. Une bibliothèque copiée sur un autre PC redemande la clé de chaque paquet au serveur (le pack doit être encore en ligne, dans la même version) ; ses réglages chiffrés n'y sont pas repris.
+
 ## Confidentialité
 
 Aucun compte, aucune mesure d'audience, aucune donnée personnelle collectée. L'application ne communique qu'avec packs.dimzou.fr : peu après le démarrage puis toutes les heures pour chercher une mise à jour (sans identifiant), à l'ouverture de la Marketplace pour lister les packs, et quand vous téléchargez un pack ou une mise à jour. Comme pour tout site web, le serveur reçoit l'adresse IP de ces requêtes. `PM_NO_UPDATE=1` désactive la recherche de mises à jour.
@@ -59,6 +62,7 @@ npm run dist
 - `src/main/core/games.ts` : détection de FiveM et de GTA V.
 - `src/main/core/elevation.ts` : exécution avec les droits administrateur.
 - `src/main/core/marketplace.ts` : Marketplace (liste, images en cache, téléchargement avec reprise, mises à jour de packs).
+- `src/main/core/sealed.ts`, `content.ts` et `keys.ts` : packs protégés (lecture du paquet chiffré, fichiers chiffrés sur le PC, clés). Le format du paquet est celui de `packs_api` (`encryption/PackageFormat.java`) ; `tests/fixtures/sample.fpk`, écrit par l'API, vérifie que les deux restent compatibles.
 - `src/main/core/updater.ts`, `portableSwap.ts` et `releaseSignature.ts` : mises à jour automatiques de l'application (installateur et version portable) et vérification de leur signature.
 - `src/renderer/` : interface.
 
@@ -121,6 +125,7 @@ L'application n'installe une mise à jour que si la signature correspond à la c
 
 - Les archives protégées par mot de passe doivent être extraites avant.
 - Les packages OpenIV (`.oiv`) concernent GTA V solo et ne sont pas installés.
+- La protection des packs empêche la copie simple (archive téléchargée, dossier de la bibliothèque), pas un utilisateur déterminé : sans compte, la clé d'un paquet est remise à qui la demande, et les fichiers sont forcément en clair dans le jeu pendant que le pack y est installé. Un pack téléchargé avant son chiffrement reste tel quel dans la bibliothèque.
 
 ## Signature du code
 
