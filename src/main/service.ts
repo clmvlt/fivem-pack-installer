@@ -515,7 +515,8 @@ export class Service {
 
     openSite: async (sitePath: string) => {
       if (!/^\/[a-z0-9/_-]*$/i.test(sitePath)) throw this.toError('Adresse invalide.')
-      await shell.openExternal(this.marketplace.siteUrl(sitePath))
+      // « depuis=app » : le site retient que l'application est installée sur ce PC (« Installer via l'app »).
+      await shell.openExternal(`${this.marketplace.siteUrl(sitePath)}?depuis=app`)
     },
 
     openLink: async (url: string) => {
