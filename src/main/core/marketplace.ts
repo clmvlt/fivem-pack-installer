@@ -15,8 +15,9 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { pathToFileURL } from 'node:url'
 import { net } from 'electron'
-import type { MarketPack, MarketPackDetail, MarketPage, MarketTag } from '@shared/types'
+import type { AuthorProfile, MarketPack, MarketPackDetail, MarketPage, MarketTag, ProfileLink } from '@shared/types'
 import type { MarketQuery } from '@shared/api'
+import { toAuthorRef } from './account'
 import type { Report } from './installer'
 import type { ImportProgress, Library, StoredManifest } from './library'
 import { KEY_SIZE, packageId } from './sealed'
@@ -45,9 +46,26 @@ interface RemoteSummary {
   updatedAt: string
   archiveUpdatedAt: string | null
   cover: RemoteImage | null
+  /** Compte de l'auteur (null si le pack n'est rattaché à aucun compte). */
+  authorProfile?: RemoteAuthorRef | null
   /** Pack chiffré : installable seulement avec l'application, qui télécharge {@link encryptedPackage}. */
   encrypted?: boolean
   encryptedPackage?: { size?: number | null; sha256?: string | null } | null
+}
+
+interface RemoteAuthorRef {
+  id: number
+  slug: string
+  displayName: string
+  avatarUrl: string | null
+}
+
+interface RemoteAuthor extends RemoteAuthorRef {
+  bio: string | null
+  links: ProfileLink[] | null
+  createdAt: string | null
+  packCount: number
+  downloads: number
 }
 
 interface RemoteDetail extends RemoteSummary {
@@ -90,6 +108,11 @@ function youtubeId(r: RemoteDetail): string | null {
   return r.youtubeId && YOUTUBE_ID.test(r.youtubeId) ? r.youtubeId : null
 }
 
+/** Nom de l'auteur gardé en texte (fiche et bibliothèque) : celui de la fiche, sinon celui de son compte. */
+function authorName(r: RemoteSummary): string {
+  return r.author || r.authorProfile?.displayName || ''
+}
+
 /** Fichier téléchargé pour un pack : son archive, ou son paquet chiffré. */
 interface Download {
   url: string
@@ -120,14 +143,14 @@ export class Marketplace {
 
   // ------------------------------------------------------------------ lecture
 
-  private async get<T>(pathAndQuery: string): Promise<T> {
+  private async get<T>(pathAndQuery: string, notFound = 'Ce pack n’est plus disponible sur la Marketplace.'): Promise<T> {
     let response: Response
     try {
       response = await net.fetch(`${this.apiUrl}${pathAndQuery}`, { signal: AbortSignal.timeout(20_000) })
     } catch {
       throw new Error('Marketplace injoignable. Vérifiez votre connexion à Internet.')
     }
-    if (response.status === 404) throw new Error('Ce pack n’est plus disponible sur la Marketplace.')
+    if (response.status === 404) throw new Error(notFound)
     if (!response.ok) throw new Error(`La Marketplace ne répond pas correctement (erreur ${response.status}).`)
     return (await response.json()) as T
   }
@@ -150,7 +173,7 @@ export class Marketplace {
       slug: r.slug,
       name: r.name,
       summary: r.summary,
-      author: r.author,
+      author: authorName(r),
       version: r.version,
       tags: r.tags,
       archiveSize: (r.encrypted ? r.encryptedPackage?.size : r.archiveSize) ?? 0,
@@ -161,6 +184,7 @@ export class Marketplace {
       updatedAt: r.updatedAt,
       archiveUpdatedAt: r.archiveUpdatedAt,
       cover: r.cover,
+      authorProfile: r.authorProfile ? toAuthorRef(r.authorProfile) : null,
       localId: local?.id ?? null,
       updateAvailable: !!local && local.marketplace!.sha256 !== r.sha256
     }
@@ -170,6 +194,7 @@ export class Marketplace {
     const params = new URLSearchParams({ page: String(query.page ?? 0), size: '24', sort: query.sort ?? 'recent' })
     if (query.q?.trim()) params.set('q', query.q.trim())
     if (query.tag) params.set('tag', query.tag)
+    if (query.author) params.set('author', query.author)
     const [page, index] = await Promise.all([this.get<RemotePage>(`/packs?${params}`), this.localIndex()])
     for (const r of page.items) this.catalog.set(r.id, r)
     return { items: page.items.map((r) => this.toMarket(r, index)), page: page.page, total: page.total, totalPages: page.totalPages }
@@ -188,6 +213,20 @@ export class Marketplace {
     const r = await this.get<RemoteDetail>(`/packs/${encodeURIComponent(idOrSlug)}`)
     this.catalog.set(r.id, r)
     return r
+  }
+
+  /** Page publique d'un auteur. */
+  async author(slugOrId: string): Promise<AuthorProfile> {
+    const r = await this.get<RemoteAuthor>(`/authors/${encodeURIComponent(slugOrId)}`, 'Cet auteur n’existe pas ou plus.')
+    return {
+      ...toAuthorRef(r),
+      bio: r.bio ?? '',
+      // Liens ouverts dans le navigateur : http(s) seulement.
+      links: (r.links ?? []).filter((l) => /^https?:\/\//i.test(l.url)).map((l) => ({ label: l.label, url: l.url })),
+      createdAt: r.createdAt ?? null,
+      packCount: r.packCount ?? 0,
+      downloads: r.downloads ?? 0
+    }
   }
 
   /** Catalogue complet, pour signaler les mises à jour dans la bibliothèque. */
@@ -487,7 +526,7 @@ export class Marketplace {
     if (fresh || coverWasMarket) m.cover = rels[0] ?? (coverWasMarket ? null : m.cover)
     if (fresh) m.name = remote.name
     m.description = remote.description
-    m.author = remote.author
+    m.author = authorName(remote)
     m.youtubeId = youtubeId(remote)
     m.marketplace = { id: remote.id, slug: remote.slug, sha256: remote.sha256!, version: remote.version, downloadedAt: new Date().toISOString() }
     await lib.save(m)

@@ -507,9 +507,22 @@ export class Service {
       })
     },
 
+    marketAuthor: (slugOrId: string) => this.marketplace.author(slugOrId),
+
     openSite: async (sitePath: string) => {
       if (!/^\/[a-z0-9/_-]*$/i.test(sitePath)) throw this.toError('Adresse invalide.')
       await shell.openExternal(this.marketplace.siteUrl(sitePath))
+    },
+
+    openLink: async (url: string) => {
+      let parsed: URL | null = null
+      try {
+        parsed = new URL(url)
+      } catch {
+        /* adresse invalide */
+      }
+      if (!parsed || (parsed.protocol !== 'https:' && parsed.protocol !== 'http:')) throw this.toError('Lien invalide.')
+      await shell.openExternal(parsed.toString())
     },
 
     accountGet: async () => this.account.current(),

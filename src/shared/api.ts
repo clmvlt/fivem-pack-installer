@@ -1,6 +1,7 @@
 import type {
   AccountMe,
   AccountProfile,
+  AuthorProfile,
   ForeignItem,
   GamesInfo,
   MarketPackDetail,
@@ -90,8 +91,12 @@ export interface PackManagerApi {
   marketDetail(idOrSlug: string): Promise<MarketPackDetail>
   /** Télécharge le pack (ou sa nouvelle version) et l'ajoute à la bibliothèque. */
   marketInstall(id: string): Promise<string>
+  /** Page publique d'un auteur (adresse ou identifiant de son compte). */
+  marketAuthor(slugOrId: string): Promise<AuthorProfile>
   /** Ouvre une page du site des packs dans le navigateur (« /packs/<adresse> », « /application »). */
   openSite(path: string): Promise<void>
+  /** Ouvre un lien (http ou https seulement) dans le navigateur. */
+  openLink(url: string): Promise<void>
 
   /** Compte connecté sur cet appareil (gardé localement, vérifié en arrière-plan), null sans compte. */
   accountGet(): Promise<AccountMe | null>
@@ -126,6 +131,8 @@ export interface PackManagerApi {
 export interface MarketQuery {
   q?: string
   tag?: string
+  /** Packs d'un auteur (adresse de son compte). */
+  author?: string
   sort?: 'recent' | 'popular' | 'name'
   page?: number
 }

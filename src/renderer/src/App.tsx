@@ -5,7 +5,7 @@ import { PackDetail } from './components/PackDetail'
 import { Cleanup } from './components/Cleanup'
 import { SettingsView } from './components/SettingsView'
 import { Graphics } from './components/Graphics'
-import { Marketplace } from './components/Marketplace'
+import { Marketplace, type MarketView } from './components/Marketplace'
 import { AccountView } from './components/AccountView'
 import { Avatar } from './components/common'
 import { UpdatePanel } from './components/UpdatePanel'
@@ -25,7 +25,8 @@ export function App() {
   const { overview, account, message, setMessage, run } = useStore()
   const [page, setPage] = useState<Page>('library')
   const [openPack, setOpenPack] = useState<string | null>(null)
-  const [openMarket, setOpenMarket] = useState<string | null>(null)
+  // Vues ouvertes dans la Marketplace (fiche, auteur...), la dernière affichée.
+  const [marketStack, setMarketStack] = useState<MarketView[]>([])
   const [dragging, setDragging] = useState(false)
 
   // Glisser-déposer d'archives (ou de dossiers) n'importe où dans la fenêtre.
@@ -80,11 +81,15 @@ export function App() {
   const go = (p: Page): void => {
     setPage(p)
     setOpenPack(null)
-    setOpenMarket(null)
+    setMarketStack([])
   }
   const openLocal = (id: string): void => {
     setPage('library')
     setOpenPack(id)
+  }
+  const openAuthor = (slug: string): void => {
+    setPage('market')
+    setMarketStack([{ kind: 'author', slug }])
   }
 
   return (
@@ -130,10 +135,18 @@ export function App() {
 
       <main className="layer">
         {page === 'library' && (detail ? <PackDetail pack={detail} onBack={() => setOpenPack(null)} /> : <Library onOpen={setOpenPack} />)}
-        {page === 'market' && <Marketplace openId={openMarket} onOpen={setOpenMarket} onOpenLocal={openLocal} />}
+        {page === 'market' && (
+          <Marketplace
+            view={marketStack[marketStack.length - 1] ?? null}
+            depth={marketStack.length}
+            onOpen={(v) => setMarketStack((s) => [...s, v])}
+            onBack={() => setMarketStack((s) => s.slice(0, -1))}
+            onOpenLocal={openLocal}
+          />
+        )}
         {page === 'graphics' && <Graphics />}
         {page === 'cleanup' && <Cleanup />}
-        {page === 'account' && <AccountView />}
+        {page === 'account' && <AccountView onOpenAuthor={openAuthor} />}
         {page === 'settings' && <SettingsView />}
 
         {message && (

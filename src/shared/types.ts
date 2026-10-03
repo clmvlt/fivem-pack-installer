@@ -311,6 +311,8 @@ export interface MarketPack {
   updatedAt: string
   archiveUpdatedAt: string | null
   cover: MarketImage | null
+  /** Compte de l'auteur, quand le pack est rattaché à un compte (sa page s'ouvre dans l'application). */
+  authorProfile: AuthorRef | null
   /** Pack correspondant dans la bibliothèque (null s'il n'a pas été téléchargé). */
   localId: string | null
   /** La version en ligne diffère de celle de la bibliothèque. */

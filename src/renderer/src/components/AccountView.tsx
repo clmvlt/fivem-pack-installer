@@ -7,7 +7,7 @@ const BIO_MAX = 2000
 const LINKS_MAX = 8
 
 /** Compte packs.dimzou.fr : connexion, puis profil public, mot de passe et déconnexion. */
-export function AccountView() {
+export function AccountView({ onOpenAuthor }: { onOpenAuthor: (slug: string) => void }) {
   const { account } = useStore()
   return (
     <div className="page">
@@ -19,7 +19,7 @@ export function AccountView() {
       ) : account.mustChangePassword ? (
         <ForcedPassword me={account} />
       ) : (
-        <Profile me={account} />
+        <Profile me={account} onOpenAuthor={onOpenAuthor} />
       )}
     </div>
   )
@@ -257,7 +257,7 @@ function AccountHead({ me, actions }: { me: AccountMe; actions?: ReactNode }) {
 
 const toInput = (p: AccountProfile): ProfileInput => ({ displayName: p.displayName, bio: p.bio, links: p.links.map((l) => ({ ...l })) })
 
-function Profile({ me }: { me: AccountMe }) {
+function Profile({ me, onOpenAuthor }: { me: AccountMe; onOpenAuthor: (slug: string) => void }) {
   const { setMessage } = useStore()
   const [profile, setProfile] = useState<AccountProfile | null>(null)
   const [draft, setDraft] = useState<ProfileInput | null>(null)
@@ -334,6 +334,7 @@ function Profile({ me }: { me: AccountMe }) {
 
       <div className="section-head">
         <h2>Profil public</h2>
+        {me.canPublish && me.slug && <button onClick={() => onOpenAuthor(me.slug)}>Voir ma page d’auteur</button>}
       </div>
       {loadError ? (
         <div className="form-panel">
