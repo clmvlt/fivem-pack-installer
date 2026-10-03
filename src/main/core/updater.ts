@@ -14,7 +14,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { app, net } from 'electron'
-import { autoUpdater, type BaseUpdater, type UpdateInfo } from 'electron-updater'
+import type { BaseUpdater, UpdateInfo } from 'electron-updater'
 import type { UpdateState } from '@shared/types'
 import { log } from '../util/log'
 import { launchSwap, prepareSwapScript } from './portableSwap'
@@ -22,6 +22,8 @@ import { releaseMessage, sha512File, verifyRelease } from './releaseSignature'
 
 const FIRST_CHECK = 10_000
 const CHECK_EVERY = 60 * 60 * 1000
+
+type AutoUpdater = (typeof import('electron-updater'))['autoUpdater']
 
 interface RemoteFile {
   kind: 'setup' | 'portable'
@@ -47,6 +49,8 @@ export class AppUpdater {
   private installRequested = false
   /** Version portable prête : fichier vérifié et script de remplacement préparé. */
   private portableReady: { file: string; script: string; workDir: string } | null = null
+  /** electron-updater, chargé à la première vérification : son chargement retarderait l'ouverture de l'application. */
+  private auto: AutoUpdater | null = null
 
   constructor(
     private apiUrl: string,
@@ -63,7 +67,6 @@ export class AppUpdater {
       this.set({ status: 'unsupported' })
       return
     }
-    if (this.mode === 'installer') this.configureInstaller()
     // Ancienne version portable restée à côté (un .exe en cours d'exécution se renomme mais ne se supprime pas).
     if (this.mode === 'portable') void fs.rm(`${process.env.PORTABLE_EXECUTABLE_FILE}.old`, { force: true }).catch(() => undefined)
     // Installation de la version vérifiée à la fermeture de l'application.
@@ -83,7 +86,10 @@ export class AppUpdater {
     this.emit(this.state)
   }
 
-  private configureInstaller(): void {
+  private installerUpdater(): AutoUpdater {
+    if (this.auto) return this.auto
+    // require plutôt que import() : le module CommonJS est chargé comme avant, sans passer par le chargeur ESM.
+    const { autoUpdater } = require('electron-updater') as typeof import('electron-updater')
     autoUpdater.logger = {
       info: (m: unknown) => log.info(`Mise à jour : ${String(m)}`),
       warn: (m: unknown) => log.warn(`Mise à jour : ${String(m)}`),
@@ -111,6 +117,8 @@ export class AppUpdater {
       if (this.state.status === 'downloading' || this.state.status === 'checking')
         this.set({ ...this.state, status: 'error', error: friendly(err) })
     })
+    this.auto = autoUpdater
+    return autoUpdater
   }
 
   /** Recherche une nouvelle version et, si possible, la télécharge et la vérifie aussitôt. */
@@ -121,6 +129,7 @@ export class AppUpdater {
     this.set({ ...previous, status: 'checking' })
     try {
       if (this.mode === 'installer') {
+        const autoUpdater = this.installerUpdater()
         const result = await autoUpdater.checkForUpdates()
         const info: UpdateInfo | undefined = result?.updateInfo
         if (!result?.isUpdateAvailable || !info) {
@@ -224,8 +233,8 @@ export class AppUpdater {
     if (this.state.status !== 'ready') throw new Error('Aucune mise à jour prête.')
     if (this.mode === 'installer') {
       this.installRequested = true
-      // Installation silencieuse puis relance de l'application.
-      autoUpdater.quitAndInstall(true, true)
+      // Installation silencieuse puis relance de l'application (« ready » : electron-updater déjà chargé).
+      this.auto!.quitAndInstall(true, true)
       return
     }
     this.installOnQuit(true)
@@ -239,7 +248,7 @@ export class AppUpdater {
     try {
       if (this.mode === 'installer') {
         log.info(`Installation de la version ${this.state.version} à la fermeture`)
-        ;(autoUpdater as unknown as BaseUpdater).install(true, false)
+        ;(this.auto as unknown as BaseUpdater).install(true, false)
       } else if (this.mode === 'portable' && this.portableReady) {
         log.info(`Remplacement de la version portable par la ${this.state.version}`)
         launchSwap(this.portableReady.script, {
