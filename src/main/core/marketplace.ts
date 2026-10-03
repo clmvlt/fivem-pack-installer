@@ -30,7 +30,7 @@ interface RemoteImage {
   height: number
 }
 
-interface RemoteSummary {
+export interface RemoteSummary {
   id: string
   slug: string
   name: string
@@ -48,6 +48,8 @@ interface RemoteSummary {
   cover: RemoteImage | null
   /** Compte de l'auteur (null si le pack n'est rattaché à aucun compte). */
   authorProfile?: RemoteAuthorRef | null
+  /** Pack du moment (absent avec une API plus ancienne). */
+  featured?: boolean
   /** Pack chiffré : installable seulement avec l'application, qui télécharge {@link encryptedPackage}. */
   encrypted?: boolean
   encryptedPackage?: { size?: number | null; sha256?: string | null } | null
@@ -120,6 +122,31 @@ function authorName(r: RemoteSummary): string {
   return r.author || r.authorProfile?.displayName || ''
 }
 
+/** Pack de l'API tel que l'interface le reçoit ; `local` : sa version la plus récente dans la bibliothèque. */
+export function toMarketPack(r: RemoteSummary, local: StoredManifest | undefined): MarketPack {
+  return {
+    id: r.id,
+    slug: r.slug,
+    name: r.name,
+    summary: r.summary,
+    author: authorName(r),
+    version: r.version,
+    tags: r.tags,
+    archiveSize: (r.encrypted ? r.encryptedPackage?.size : r.archiveSize) ?? 0,
+    sha256: r.sha256 ?? '',
+    protected: !!r.encrypted,
+    downloadCount: r.downloadCount,
+    publishedAt: r.publishedAt,
+    updatedAt: r.updatedAt,
+    archiveUpdatedAt: r.archiveUpdatedAt,
+    cover: r.cover,
+    authorProfile: r.authorProfile ? toAuthorRef(r.authorProfile) : null,
+    featured: r.featured === true,
+    localId: local?.id ?? null,
+    updateAvailable: !!local && local.marketplace!.sha256 !== r.sha256
+  }
+}
+
 /** Fichier téléchargé pour un pack : son archive, ou son paquet chiffré. */
 interface Download {
   url: string
@@ -174,27 +201,7 @@ export class Marketplace {
   }
 
   private toMarket(r: RemoteSummary, index: Map<string, StoredManifest>): MarketPack {
-    const local = index.get(r.id)
-    return {
-      id: r.id,
-      slug: r.slug,
-      name: r.name,
-      summary: r.summary,
-      author: authorName(r),
-      version: r.version,
-      tags: r.tags,
-      archiveSize: (r.encrypted ? r.encryptedPackage?.size : r.archiveSize) ?? 0,
-      sha256: r.sha256 ?? '',
-      protected: !!r.encrypted,
-      downloadCount: r.downloadCount,
-      publishedAt: r.publishedAt,
-      updatedAt: r.updatedAt,
-      archiveUpdatedAt: r.archiveUpdatedAt,
-      cover: r.cover,
-      authorProfile: r.authorProfile ? toAuthorRef(r.authorProfile) : null,
-      localId: local?.id ?? null,
-      updateAvailable: !!local && local.marketplace!.sha256 !== r.sha256
-    }
+    return toMarketPack(r, index.get(r.id))
   }
 
   async list(query: MarketQuery): Promise<MarketPage> {
@@ -209,6 +216,19 @@ export class Marketplace {
 
   tags(): Promise<MarketTag[]> {
     return this.get<MarketTag[]>('/packs/tags')
+  }
+
+  /** Packs du moment, dans l'ordre de l'API. Erreur ou API plus ancienne (404) : aucun. */
+  async featured(): Promise<MarketPack[]> {
+    try {
+      const [items, index] = await Promise.all([this.get<RemoteSummary[]>('/packs/featured'), this.localIndex()])
+      if (!Array.isArray(items)) return []
+      for (const r of items) this.catalog.set(r.id, r)
+      return items.map((r) => this.toMarket(r, index))
+    } catch (err) {
+      log.info(`Packs du moment non chargés : ${(err as Error).message}`)
+      return []
+    }
   }
 
   async detail(idOrSlug: string): Promise<MarketPackDetail> {

@@ -123,6 +123,7 @@ function MarketList({ author, onAuthor, onOpen, onOpenLocal }: Nav & { author: s
   const [query, setQuery] = useState<MarketQuery>({ sort: 'recent', page: 0 })
   const [tags, setTags] = useState<MarketTag[]>([])
   const [authors, setAuthors] = useState<AuthorSummary[]>([])
+  const [featured, setFeatured] = useState<MarketPack[]>([])
   const { page, error, loading, reload } = useMarketPage({ ...query, author: author ?? undefined })
   const [search, setSearch] = useSearch(
     query.q,
@@ -135,6 +136,7 @@ function MarketList({ author, onAuthor, onOpen, onOpenLocal }: Nav & { author: s
       (p) => setAuthors(p.items),
       () => setAuthors([])
     )
+    window.api.marketFeatured().then(setFeatured, () => setFeatured([]))
   }, [])
 
   if (!overview) return null
@@ -157,6 +159,10 @@ function MarketList({ author, onAuthor, onOpen, onOpenLocal }: Nav & { author: s
           <option value="name">Nom</option>
         </select>
       </header>
+      {/* Pack du moment : seulement sur la liste complète, sans recherche ni filtre. */}
+      {featured.length > 0 && !query.q && !query.tag && !author && (
+        <FeaturedBanner items={featured} library={overview.library} onOpen={onOpen} onOpenLocal={onOpenLocal} />
+      )}
       <AuthorStrip authors={authors} author={author} onAuthor={chooseAuthor} />
       {selected && (
         <div className="author-filter">
@@ -257,6 +263,62 @@ function PackGrid({
   )
 }
 
+function FeaturedBadge({ className = '' }: { className?: string }) {
+  return (
+    <span className={`featured-badge ${className}`}>
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+        <path d="M8 1.2l2.1 4.3 4.7.7-3.4 3.3.8 4.7L8 12l-4.2 2.2.8-4.7L1.2 6.2l4.7-.7z" />
+      </svg>
+      Pack du moment
+    </span>
+  )
+}
+
+/** Bandeau « Pack du moment » en haut de la Marketplace : grande couverture, nom, auteur, résumé et actions. */
+function FeaturedBanner({ items, library, onOpen, onOpenLocal }: Nav & { items: MarketPack[]; library: PackManifest[] }) {
+  const { task } = useStore()
+  return (
+    <section className="featured" aria-label="Pack du moment">
+      {items.map((item) => {
+        const mine = task?.kind === 'download' && task.detail === item.id ? task : null
+        const open = (): void => onOpen({ kind: 'pack', id: item.id })
+        return (
+          <article key={item.id} className="featured-item clickable" onClick={open}>
+            <div className="featured-cover">
+              {item.cover ? (
+                <img className="cover-img" src={marketImageUrl(item.id, item.cover.id)} alt="" draggable={false} />
+              ) : (
+                <div className="cover-empty">{item.name}</div>
+              )}
+            </div>
+            <div className="featured-body">
+              <FeaturedBadge />
+              <h2 className="featured-name">{item.name}</h2>
+              {item.author && (
+                <div className="tags by">
+                  par <AuthorLink item={item} onOpen={onOpen} avatar />
+                </div>
+              )}
+              {item.summary && <p className="featured-summary">{item.summary}</p>}
+              <div className="spacer" />
+              <div className="featured-actions" onClick={(e) => e.stopPropagation()}>
+                {mine ? (
+                  <Progress task={mine} />
+                ) : (
+                  <>
+                    <button onClick={open}>Voir la fiche</button>
+                    <MarketAction item={item} library={library} task={task} onOpenLocal={onOpenLocal} />
+                  </>
+                )}
+              </div>
+            </div>
+          </article>
+        )
+      })}
+    </section>
+  )
+}
+
 /** « par Auteur » : ouvre la page de l'auteur quand le pack est rattaché à son compte. */
 function AuthorLink({ item, onOpen, avatar = false }: { item: MarketPack; onOpen: (view: MarketView) => void; avatar?: boolean }) {
   const profile = item.authorProfile
@@ -291,8 +353,9 @@ function MarketCard({
   const mine = task?.kind === 'download' && task.detail === item.id ? task : null
   const others = [item.tags.slice(0, 3).join(', '), bytes(item.archiveSize), item.protected && 'protégé'].filter(Boolean).join(' · ')
   return (
-    <article className="card clickable" onClick={() => onOpen({ kind: 'pack', id: item.id })}>
+    <article className={`card clickable ${item.featured ? 'is-featured' : ''}`} onClick={() => onOpen({ kind: 'pack', id: item.id })}>
       <div className="cover">
+        {item.featured && <FeaturedBadge className="on-cover" />}
         {item.cover && !failed ? (
           <img className="cover-img" src={marketImageUrl(item.id, item.cover.id, true)} alt="" draggable={false} onError={() => setFailed(true)} />
         ) : (
@@ -423,6 +486,7 @@ function MarketDetail({ id, back, onOpen, onOpenLocal }: Nav & { id: string; bac
         />
 
         <aside className="side">
+          {pack.featured && <FeaturedBadge />}
           <h1 className="pack-title">{pack.name}</h1>
           {pack.author && (
             <div className="tags by">

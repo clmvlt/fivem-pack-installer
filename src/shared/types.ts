@@ -313,6 +313,8 @@ export interface MarketPack {
   cover: MarketImage | null
   /** Compte de l'auteur, quand le pack est rattaché à un compte (sa page s'ouvre dans l'application). */
   authorProfile: AuthorRef | null
+  /** « Pack du moment », mis en avant par l'admin du site (déjà en tête des listes de l'API). */
+  featured: boolean
   /** Pack correspondant dans la bibliothèque (null s'il n'a pas été téléchargé). */
   localId: string | null
   /** La version en ligne diffère de celle de la bibliothèque. */

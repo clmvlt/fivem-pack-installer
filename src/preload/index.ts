@@ -46,6 +46,7 @@ const methods = [
   'confirm',
   'marketList',
   'marketTags',
+  'marketFeatured',
   'marketDetail',
   'marketInstall',
   'marketAuthors',

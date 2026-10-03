@@ -5,6 +5,7 @@ import type {
   AuthorProfile,
   ForeignItem,
   GamesInfo,
+  MarketPack,
   MarketPackDetail,
   MarketPage,
   MarketTag,
@@ -89,6 +90,8 @@ export interface PackManagerApi {
   /** Packs publiés sur la Marketplace. */
   marketList(query: MarketQuery): Promise<MarketPage>
   marketTags(): Promise<MarketTag[]>
+  /** Packs mis en avant (« Pack du moment »), le plus récent en premier ; liste vide en cas d'erreur. */
+  marketFeatured(): Promise<MarketPack[]>
   marketDetail(idOrSlug: string): Promise<MarketPackDetail>
   /** Télécharge le pack (ou sa nouvelle version) et l'ajoute à la bibliothèque. */
   marketInstall(id: string): Promise<string>

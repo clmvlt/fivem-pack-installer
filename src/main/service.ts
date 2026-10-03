@@ -489,6 +489,8 @@ export class Service {
 
     marketTags: () => this.marketplace.tags(),
 
+    marketFeatured: () => this.marketplace.featured(),
+
     marketDetail: (idOrSlug: string) => this.marketplace.detail(idOrSlug),
 
     marketInstall: async (id: string) => {
