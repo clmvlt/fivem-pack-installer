@@ -165,9 +165,9 @@ export class Installer {
 
   // -------------------------------------------------------------------------
 
-  /** Mods installés à la main, hors pack actif (pour la ligne « Installation actuelle »). */
-  async foreignSummary(): Promise<{ files: number; size: number } | null> {
-    const c = await collectForeign(await this.ctx.detectGames(), this.state.active)
+  /** Mods installés à la main, hors pack actif (pour la ligne « Installation actuelle »). `games` : détection déjà faite. */
+  async foreignSummary(games?: GamesInfo): Promise<{ files: number; size: number } | null> {
+    const c = await collectForeign(games ?? (await this.ctx.detectGames()), this.state.active)
     return c.files.length ? { files: c.files.length, size: c.files.reduce((s, f) => s + f.size, 0) } : null
   }
 

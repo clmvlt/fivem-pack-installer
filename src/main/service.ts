@@ -20,12 +20,21 @@ import { runningGameProcesses } from './util/win'
 import type { GraphicsTarget } from '@shared/graphics'
 import { fileDestination } from './core/analyzer'
 import { defaultSettings, emptyState, JsonStore, pushHistory } from './core/stores'
-import { exists, isInside, moveDir } from './util/fsx'
+import { exists, isInside, moveDir, readJson, writeJsonAtomic } from './util/fsx'
 import { log } from './util/log'
 
 type ServerApi = Omit<PackManagerApi, 'onTask' | 'onChanged' | 'onUpdate' | 'onAccount' | 'onOpenMarketPack' | 'getPathForFile'>
 
 const MARKET_REFRESH = 6 * 60 * 60 * 1000
+
+/** Dernière détection des jeux, enregistrée pour le démarrage suivant. */
+interface SavedGames {
+  /** Version de l'application qui l'a écrite : le format de GamesInfo peut changer d'une version à l'autre. */
+  version: string
+  fivemPath: string | null
+  gtaPath: string | null
+  games: GamesInfo
+}
 
 /** Chiffrement de Windows (DPAPI) pour le compte de l'utilisateur. */
 const systemProtection: SystemProtection = {
@@ -43,7 +52,9 @@ export class Service {
   marketplace!: Marketplace
   updater: AppUpdater
   private gamesCache: GamesInfo | null = null
-  private foreignCache: Overview['foreign'] | undefined
+  /** Détection des jeux lancée au démarrage (null en cas d'échec). */
+  private firstDetection: Promise<GamesInfo | null> = Promise.resolve(null)
+  private foreign: Promise<Overview['foreign']> | null = null
   private running: { id: string; abort: AbortController } | null = null
   /** Clés des packs protégés : clé locale gardée chiffrée par Windows (DPAPI), clés des paquets remises par l'API. */
   private keys: KeyRing
@@ -78,6 +89,21 @@ export class Service {
   async init(): Promise<void> {
     await this.settings.load(defaultSettings(this.dataDir))
     await this.state.load(emptyState())
+    // Détection des jeux (registre lu par PowerShell : une demi-seconde, plus sur un PC lent) lancée tout de suite,
+    // pendant l'ouverture de la fenêtre. L'interface s'affiche sans l'attendre avec celle du lancement précédent,
+    // puis se met à jour si elle a changé.
+    const saved = await this.savedGames()
+    this.gamesCache = saved
+    this.firstDetection = this.refreshGames().then(
+      (games) => {
+        if (saved && JSON.stringify(saved) !== JSON.stringify(games)) this.changed()
+        return games
+      },
+      (err: unknown) => {
+        log.warn(`Détection des jeux : ${(err as Error).message}`)
+        return null
+      }
+    )
     this.library = new Library(this.settings.get().libraryDir, this.keys)
     await this.library.cleanupStaging()
     this.installer = new Installer({
@@ -120,13 +146,30 @@ export class Service {
   }
 
   private changed(): void {
-    this.foreignCache = undefined
+    this.foreign = null
     this.emit(IPC.changed)
   }
 
+  private get gamesFile(): string {
+    return path.join(this.dataDir, 'games.json')
+  }
+
   async refreshGames(): Promise<GamesInfo> {
-    this.gamesCache = await detectGames(this.settings.get())
-    return this.gamesCache
+    const settings = this.settings.get()
+    const games = await detectGames(settings)
+    this.gamesCache = games
+    const saved: SavedGames = { version: app.getVersion(), fivemPath: settings.fivemPath, gtaPath: settings.gtaPath, games }
+    void writeJsonAtomic(this.gamesFile, saved).catch(() => undefined)
+    return games
+  }
+
+  /** Détection du lancement précédent, si elle vient de cette version et que les dossiers choisis n'ont pas changé. */
+  private async savedGames(): Promise<GamesInfo | null> {
+    const s = await readJson<SavedGames | null>(this.gamesFile, null)
+    const { fivemPath, gtaPath } = this.settings.get()
+    if (!s?.games?.fivem || !s.games.gta || s.version !== app.getVersion() || s.fivemPath !== fivemPath || s.gtaPath !== gtaPath) return null
+    // Jeu en cours d'exécution : la détection en cours le dira.
+    return { ...s.games, runningProcesses: [] }
   }
 
   private screenshotsDir(): string {
@@ -174,19 +217,23 @@ export class Service {
 
   api: ServerApi = {
     getOverview: async (): Promise<Overview> => {
-      const games = this.gamesCache ?? (await this.refreshGames())
-      if (this.foreignCache === undefined) this.foreignCache = await this.installer.foreignSummary().catch(() => null)
+      const games = this.gamesCache ?? (await this.firstDetection) ?? (await this.refreshGames())
+      // Mods installés à la main : parcours des dossiers du jeu, en même temps que la bibliothèque.
+      const pendingForeign = (this.foreign ??= this.installer.foreignSummary(games).catch(() => null))
+      const library = await this.library.list()
+      const market = await this.marketplace.status().catch(() => ({ updates: [], gone: [] }))
+      const foreign = await pendingForeign
       return {
         settings: this.settings.get(),
         games,
         state: this.state.get(),
-        library: (await this.library.list()).map(toPublic),
-        foreign: this.foreignCache,
+        library: library.map(toPublic),
+        foreign,
         accent: accentColor(),
         version: app.getVersion(),
         dataDir: this.dataDir,
         apiUrl: this.apiUrl,
-        market: await this.marketplace.status().catch(() => ({ updates: [], gone: [] })),
+        market,
         update: this.updater.state
       }
     },
