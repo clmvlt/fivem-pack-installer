@@ -3,7 +3,7 @@
 #   1. tests puis compilation de l'installateur et de la version portable ;
 #   2. signature Ed25519 de chaque fichier (secret PM_SIGNING_KEY : contenu du fichier .pem de la clé de publication) ;
 #   3. release GitHub avec les fichiers et leurs signatures ;
-#   4. mise en ligne sur packs.dimzou.fr (secrets PACKS_ADMIN_USER et PACKS_ADMIN_PASSWORD) : les applications
+#   4. mise en ligne sur reflect-fivem.com (secrets PACKS_ADMIN_USER et PACKS_ADMIN_PASSWORD) : les applications
 #      installées la téléchargent, la vérifient et l'installent seules.
 #
 # Sans les secrets, la release GitHub est créée sans signatures et la version n'est pas mise en ligne sur le site.
@@ -101,7 +101,7 @@ jobs:
             release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
             release/*.sig
 
-      - name: Mise en ligne sur packs.dimzou.fr
+      - name: Mise en ligne sur reflect-fivem.com
         if: env.HAS_SIGNING_KEY == 'true' && env.HAS_ADMIN == 'true'
         env:
           PACKS_ADMIN_USER: ${{ secrets.PACKS_ADMIN_USER || 'admin' }}
@@ -113,7 +113,7 @@ jobs:
       - name: Secrets manquants
         if: env.HAS_SIGNING_KEY != 'true' || env.HAS_ADMIN != 'true'
         run: |
-          echo "::warning::Secrets PM_SIGNING_KEY ou PACKS_ADMIN_PASSWORD absents. Release GitHub créée, mais la version n'est pas mise en ligne sur packs.dimzou.fr."
+          echo "::warning::Secrets PM_SIGNING_KEY ou PACKS_ADMIN_PASSWORD absents. Release GitHub créée, mais la version n'est pas mise en ligne sur reflect-fivem.com."
 
       - name: Nettoyage de la clé
         if: always()

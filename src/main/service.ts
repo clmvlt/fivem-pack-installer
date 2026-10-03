@@ -58,7 +58,7 @@ export class Service {
   private running: { id: string; abort: AbortController } | null = null
   /** Clés des packs protégés : clé locale gardée chiffrée par Windows (DPAPI), clés des paquets remises par l'API. */
   private keys: KeyRing
-  /** Compte packs.dimzou.fr (facultatif) : jeton gardé chiffré par Windows. */
+  /** Compte reflect-fivem.com (facultatif) : jeton gardé chiffré par Windows. */
   account: Account
 
   constructor(

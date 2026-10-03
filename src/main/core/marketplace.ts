@@ -1,4 +1,4 @@
-// Marketplace : packs publiés sur packs.dimzou.fr, téléchargés directement dans la bibliothèque.
+// Marketplace : packs publiés sur reflect-fivem.com, téléchargés directement dans la bibliothèque.
 //
 // Le téléchargement se fait dans <bibliothèque>/.downloads/<id>/ (conservé entre deux lancements pour reprendre
 // là où il s'était arrêté), l'archive est vérifiée (SHA-256) puis importée comme un pack ajouté à la main.

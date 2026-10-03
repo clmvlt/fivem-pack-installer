@@ -35,4 +35,4 @@ portable:
 # l'administration du site (Versions de l'app), après signature (scripts/sign-release.mjs).
 publish:
   provider: generic
-  url: https://packs.dimzou.fr/api/app/updates
+  url: https://reflect-fivem.com/api/app/updates

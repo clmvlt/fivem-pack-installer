@@ -6,7 +6,7 @@ import { Avatar } from './common'
 const BIO_MAX = 2000
 const LINKS_MAX = 8
 
-/** Compte packs.dimzou.fr : connexion, puis profil public, mot de passe et déconnexion. */
+/** Compte reflect-fivem.com : connexion, puis profil public, mot de passe et déconnexion. */
 export function AccountView({ onOpenAuthor }: { onOpenAuthor: (slug: string) => void }) {
   const { account } = useStore()
   return (

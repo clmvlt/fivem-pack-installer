@@ -15,7 +15,7 @@ describe('findDeepLink', () => {
 
   it('ignore une ligne de commande sans lien', () => {
     expect(findDeepLink(['app.exe'])).toBeNull()
-    expect(findDeepLink(['app.exe', 'https://packs.dimzou.fr/', 'fivem-pack-manager:pack'])).toBeNull()
+    expect(findDeepLink(['app.exe', 'https://reflect-fivem.com/', 'fivem-pack-manager:pack'])).toBeNull()
   })
 })
 

@@ -48,8 +48,8 @@ WORKSPACE_DIR = PROJECT_DIR.parent
 RELEASE_DIR = PROJECT_DIR / "release"
 SIGN_SCRIPT = PROJECT_DIR / "scripts" / "sign-release.mjs"
 
-API_URLS = {"prod": "https://packs.dimzou.fr/api", "dev": "http://192.168.1.13:8080/api"}
-SITE_URLS = {"prod": "https://packs.dimzou.fr", "dev": "http://192.168.1.13:5173"}
+API_URLS = {"prod": "https://reflect-fivem.com/api", "dev": "http://192.168.1.13:8080/api"}
+SITE_URLS = {"prod": "https://reflect-fivem.com", "dev": "http://192.168.1.13:5173"}
 CONFIG_FILES = [SCRIPT_DIR / "deploy.env", WORKSPACE_DIR / "deploy.env"]
 CHUNK_SIZES = [8, 4, 2, 1, 0.5, 0.25]
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$")

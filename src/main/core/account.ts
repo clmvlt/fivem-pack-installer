@@ -1,4 +1,4 @@
-// Compte packs.dimzou.fr (facultatif) : connexion par jeton, profil public de l'auteur.
+// Compte reflect-fivem.com (facultatif) : connexion par jeton, profil public de l'auteur.
 //
 // Le jeton (en-tête « Authorization: Bearer ») est gardé chiffré par Windows (safeStorage, DPAPI) dans le dossier de
 // données, avec le dernier état connu du compte pour l'afficher sans réseau. Il reste valable 180 jours après sa

@@ -6,12 +6,12 @@ Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReSh
 
 Anciennement « FiveM Pack Manager ». L'exécutable, l'installateur, le dossier de données (`%LOCALAPPDATA%\FiveM Pack Manager\`) et les liens `fivem-pack-manager://` gardent ce nom : les mises à jour automatiques et les bibliothèques déjà installées continuent de fonctionner.
 
-**Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/fivem-pack-installer/releases/latest) (installateur ou version portable), aussi accessible depuis [packs.dimzou.fr/application](https://packs.dimzou.fr/application).
+**Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/fivem-pack-installer/releases/latest) (installateur ou version portable), aussi accessible depuis [reflect-fivem.com/application](https://reflect-fivem.com/application).
 
 ## Utilisation
 
 - **Bibliothèque** : vos packs en cartes avec leur image. Glissez une archive `.zip`, `.rar` ou `.7z` (ou un dossier) dans la fenêtre, ou cliquez sur « Ajouter un pack… ». « Installer » met le pack en place ; le pack installé auparavant est retiré automatiquement. « Retirer » remet le jeu dans son état d'origine.
-- **Marketplace** : les packs publiés sur [packs.dimzou.fr](https://packs.dimzou.fr). « Télécharger » ajoute le pack à la bibliothèque avec son nom, ses images et sa description ; il s'installe ensuite comme les autres. Quand l'auteur publie une nouvelle version, « Mettre à jour » la télécharge, garde vos réglages et votre preset ReShade, et la met en place si l'ancienne était installée. Au-dessus des packs, « Tous les packs » puis un rond par auteur (sa photo, son nom en dessous) : un clic n'affiche que ses packs. Quand un pack est rattaché au compte de son auteur, « par … » ouvre la page de l'auteur dans l'application : photo, description, liens (ouverts dans le navigateur), nombre de packs, téléchargements et liste de ses packs.
+- **Marketplace** : les packs publiés sur [reflect-fivem.com](https://reflect-fivem.com). « Télécharger » ajoute le pack à la bibliothèque avec son nom, ses images et sa description ; il s'installe ensuite comme les autres. Quand l'auteur publie une nouvelle version, « Mettre à jour » la télécharge, garde vos réglages et votre preset ReShade, et la met en place si l'ancienne était installée. Au-dessus des packs, « Tous les packs » puis un rond par auteur (sa photo, son nom en dessous) : un clic n'affiche que ses packs. Quand un pack est rattaché au compte de son auteur, « par … » ouvre la page de l'auteur dans l'application : photo, description, liens (ouverts dans le navigateur), nombre de packs, téléchargements et liste de ses packs.
 - **Depuis le site** : « Installer via l'app » sur la page d'un pack ouvre l'application (liens `fivem-pack-manager://pack/<id>`, enregistrés par l'installateur et par la version portable à son lancement) directement sur la fiche du pack dans la Marketplace ; il ne reste qu'à cliquer sur « Télécharger ». Les pages du site ouvertes depuis l'application lui indiquent qu'elle est installée sur ce PC.
 - **Compte** (facultatif) : connexion par e-mail et mot de passe, création de compte, ou « Continuer avec Google » (la page de Google s'ouvre dans le navigateur). Une fois connecté : photo, nom public, description et liens de votre page d'auteur, changement de mot de passe, déconnexion. La bibliothèque et la Marketplace fonctionnent sans compte.
 - **Packs protégés** : un pack chiffré sur la Marketplace ne se télécharge pas depuis le site. L'application reçoit un paquet chiffré qu'elle garde tel quel dans la bibliothèque, sans jamais l'extraire : chaque fichier est déchiffré directement à sa place dans le jeu à l'installation. Ses réglages modifiés en jeu sont gardés chiffrés. Une fois le pack retiré du jeu, il n'en reste aucun fichier en clair (ni archive, ni dossier extrait) ; « Ouvrir le dossier » n'est pas proposé.
@@ -54,7 +54,7 @@ Packs protégés : `Bibliotheque\<pack>\content.fpk` (paquet chiffré reçu du s
 
 Le compte est facultatif. Sans compte, aucune donnée personnelle n'est envoyée. L'application n'a aucune mesure d'audience.
 
-L'application ne communique qu'avec packs.dimzou.fr : peu après le démarrage puis toutes les heures pour chercher une mise à jour (sans identifiant), à l'ouverture de la Marketplace pour lister les packs et les pages d'auteurs, et quand vous téléchargez un pack ou une mise à jour. Comme pour tout site web, le serveur reçoit l'adresse IP de ces requêtes. `PM_NO_UPDATE=1` désactive la recherche de mises à jour.
+L'application ne communique qu'avec reflect-fivem.com (packs.dimzou.fr avant la version 1.8.1) : peu après le démarrage puis toutes les heures pour chercher une mise à jour (sans identifiant), à l'ouverture de la Marketplace pour lister les packs et les pages d'auteurs, et quand vous téléchargez un pack ou une mise à jour. Comme pour tout site web, le serveur reçoit l'adresse IP de ces requêtes. `PM_NO_UPDATE=1` désactive la recherche de mises à jour.
 
 Avec un compte, le serveur garde votre adresse e-mail, votre nom public, votre description, vos liens et votre photo, ainsi que le nom de l'appareil connecté (« Reflect FiveM — <nom du PC> »), affiché dans la liste de vos connexions. Le jeton de connexion est gardé chiffré sur le PC (voir « Données ») et n'est envoyé qu'au serveur, pour les actions liées au compte : vérification du compte au démarrage, profil, photo, mot de passe, déconnexion. Il n'est jamais écrit dans les journaux. Les téléchargements et les recherches dans la Marketplace se font sans le jeton. Avec Google, l'application ne voit ni votre mot de passe Google ni le secret de l'application Google : elle reçoit seulement un code à usage unique, échangé par le serveur.
 
@@ -78,7 +78,7 @@ npm run dist
 - `src/main/core/updater.ts`, `portableSwap.ts` et `releaseSignature.ts` : mises à jour automatiques de l'application (installateur et version portable) et vérification de leur signature.
 - `src/renderer/` : interface.
 
-L'API utilisée est `https://packs.dimzou.fr/api`, sauf avec `npm run dev` où c'est l'API de dev du poste (`http://192.168.1.13:8080/api`, projet `packs_api`).
+L'API utilisée est `https://reflect-fivem.com/api`, sauf avec `npm run dev` où c'est l'API de dev du poste (`http://192.168.1.13:8080/api`, projet `packs_api`).
 
 Variables pour les tests : `PM_DATA_DIR` (autre dossier de données), `PM_FORCE_ELEVATION=1`, `PM_NO_UAC=1`, `PM_API_URL` (autre adresse d'API) et `PM_UPDATER_DEV=1` (mises à jour de l'installateur actives hors version installée, avec `dev-app-update.yml`) et `PM_NO_UPDATE=1` (aucune recherche de mise à jour).
 
@@ -87,7 +87,7 @@ Variables pour les tests : `PM_DATA_DIR` (autre dossier de données), `PM_FORCE_
 La compilation et la publication se font sur GitHub (Actions, machines Windows) :
 
 - **CI** (`.github/workflows/ci.yml`) : à chaque push et pull request, typage, tests, puis installateur et version portable, téléchargeables dans les artefacts de l'exécution.
-- **Publication** (`.github/workflows/release.yml`) : poussez un tag `vX.Y.Z` identique à la version de `package.json`. Le workflow teste, compile, signe les fichiers, crée la release GitHub, puis met la version en ligne sur packs.dimzou.fr : les applications installées la téléchargent, la vérifient et l'installent seules.
+- **Publication** (`.github/workflows/release.yml`) : poussez un tag `vX.Y.Z` identique à la version de `package.json`. Le workflow teste, compile, signe les fichiers, crée la release GitHub, puis met la version en ligne sur reflect-fivem.com : les applications installées la téléchargent, la vérifient et l'installent seules.
 
 Une fois la nouvelle version committée dans `package.json` (et, si vous voulez, `notes/X.Y.Z.md`) :
 
@@ -97,7 +97,7 @@ npm run release -- --dry-run     # montre ce qui serait fait, sans rien pousser
 npm run release -- --no-watch    # pousse le tag sans attendre la fin
 ```
 
-Le script ne crée aucun commit. Il refuse de partir si des fichiers ne sont pas committés ou si la version est déjà publiée, pousse les commits pas encore envoyés, crée le tag, puis suit le workflow (GitHub CLI `gh`) et vérifie la release GitHub et packs.dimzou.fr.
+Le script ne crée aucun commit. Il refuse de partir si des fichiers ne sont pas committés ou si la version est déjà publiée, pousse les commits pas encore envoyés, crée le tag, puis suit le workflow (GitHub CLI `gh`) et vérifie la release GitHub et reflect-fivem.com.
 
 Nouveautés affichées sur le site et dans la release : `notes/X.Y.Z.md` s'il existe, sinon la liste des commits depuis le tag précédent.
 
@@ -143,7 +143,7 @@ L'application n'installe une mise à jour que si la signature correspond à la c
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-Les fichiers publiés (installateur, version portable, exécutable de l'application) sont construits par GitHub Actions à partir de ce dépôt et d'un tag `vX.Y.Z`, puis signés après approbation manuelle. Auteurs, relecteurs et approbateurs : [clmvlt](https://github.com/clmvlt). Les composants d'autres projets (Electron, 7-Zip, unRAR) sont livrés tels que publiés par leurs auteurs. Politique complète : [packs.dimzou.fr/signature](https://packs.dimzou.fr/signature).
+Les fichiers publiés (installateur, version portable, exécutable de l'application) sont construits par GitHub Actions à partir de ce dépôt et d'un tag `vX.Y.Z`, puis signés après approbation manuelle. Auteurs, relecteurs et approbateurs : [clmvlt](https://github.com/clmvlt). Les composants d'autres projets (Electron, 7-Zip, unRAR) sont livrés tels que publiés par leurs auteurs. Politique complète : [reflect-fivem.com/signature](https://reflect-fivem.com/signature).
 
 ## Licence
 

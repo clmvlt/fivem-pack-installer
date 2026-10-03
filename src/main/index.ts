@@ -41,7 +41,7 @@ function startApp(): void {
   // Adresse de l'API (Marketplace et mises à jour) : production, sauf en développement (npm run dev) où l'API
   // tourne sur le poste. PM_API_URL force une autre adresse (tests).
   const devServer = !app.isPackaged && !!process.env.ELECTRON_RENDERER_URL
-  const apiUrl = (process.env.PM_API_URL || (devServer ? 'http://192.168.1.13:8080/api' : 'https://packs.dimzou.fr/api')).replace(/\/+$/, '')
+  const apiUrl = (process.env.PM_API_URL || (devServer ? 'http://192.168.1.13:8080/api' : 'https://reflect-fivem.com/api')).replace(/\/+$/, '')
 
   registerProtocol()
 

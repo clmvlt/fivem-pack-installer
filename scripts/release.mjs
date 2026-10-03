@@ -6,7 +6,7 @@
 //   npm run release -- --no-watch    pousse le tag sans attendre la fin de la publication
 //
 // La version publiée est celle du dernier commit (package.json de HEAD). Le workflow .github/workflows/release.yml
-// compile, signe, crée la release GitHub et met la version en ligne sur packs.dimzou.fr.
+// compile, signe, crée la release GitHub et met la version en ligne sur reflect-fivem.com.
 
 import { execFileSync, spawnSync } from 'node:child_process'
 
@@ -14,7 +14,7 @@ const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 const watch = !args.includes('--no-watch')
 const allowDirty = args.includes('--allow-dirty')
-const SITE_API = 'https://packs.dimzou.fr/api'
+const SITE_API = 'https://reflect-fivem.com/api'
 
 const color = (code, text) => (process.stdout.isTTY ? `\x1b[${code}m${text}\x1b[0m` : text)
 const step = (m) => console.log(`\n${color('1;36', `==> ${m}`)}`)
@@ -139,10 +139,10 @@ async function main() {
   if (release) ok(`release GitHub : ${release}`)
   try {
     const latest = await (await fetch(`${SITE_API}/app/releases/latest`)).json()
-    if (latest.version === version) ok(`packs.dimzou.fr propose la version ${version} : les applications installées la prendront seules`)
-    else warn(`packs.dimzou.fr propose encore la version ${latest.version} (secrets de publication manquants ?)`)
+    if (latest.version === version) ok(`reflect-fivem.com propose la version ${version} : les applications installées la prendront seules`)
+    else warn(`reflect-fivem.com propose encore la version ${latest.version} (secrets de publication manquants ?)`)
   } catch {
-    warn('packs.dimzou.fr injoignable pour la vérification')
+    warn('reflect-fivem.com injoignable pour la vérification')
   }
   step(`Version ${version} publiée`)
 }
