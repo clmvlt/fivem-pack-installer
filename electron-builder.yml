@@ -9,6 +9,10 @@ files:
   - '!packs/**'
   - '!node_modules/7zip-bin/{mac,linux}/**'
   - '!node_modules/7zip-bin/win/{ia32,arm64}/**'
+# Liens « fivem-pack-manager://pack/<id> » du site (« Installer via l'app »), enregistrés par l'installateur.
+protocols:
+  - name: FiveM Pack Manager
+    schemes: [fivem-pack-manager]
 asarUnpack:
   - node_modules/7zip-bin/**
   - node_modules/node-unrar-js/**/*.wasm

@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, net, protocol, screen, session, shell } from 'electron'
 import { IPC } from '@shared/api'
+import { describeLink, findDeepLink, parsePackLink, PROTOCOL } from './core/deepLink'
 import { EXEC_FLAG, runElevatedWorker } from './core/elevation'
 import { Service } from './service'
 import { isInside } from './util/fsx'
@@ -42,14 +43,36 @@ function startApp(): void {
   const devServer = !app.isPackaged && !!process.env.ELECTRON_RENDERER_URL
   const apiUrl = (process.env.PM_API_URL || (devServer ? 'http://192.168.1.13:8080/api' : 'https://packs.dimzou.fr/api')).replace(/\/+$/, '')
 
+  registerProtocol()
+
   let win: BrowserWindow | null = null
   const service = new Service(dataDir, () => win, apiUrl)
 
-  app.on('second-instance', () => {
-    if (win) {
-      if (win.isMinimized()) win.restore()
-      win.focus()
+  // Lien « fivem-pack-manager://pack/<id> » : gardé jusqu'à ce que la page de l'application soit chargée.
+  let pendingPack: string | null = null
+  let pageLoaded = false
+  const sendPendingPack = (): void => {
+    if (!pendingPack || !pageLoaded || !win || win.isDestroyed()) return
+    win.webContents.send(IPC.openMarketPack, pendingPack)
+    pendingPack = null
+  }
+  const receiveLink = (argv: readonly string[]): void => {
+    const link = findDeepLink(argv)
+    if (!link) return
+    const id = parsePackLink(link)
+    if (!id) {
+      log.warn(`Lien ignoré : ${describeLink(link)}`)
+      return
     }
+    log.info(`Lien reçu : pack ${id}`)
+    pendingPack = id
+    sendPendingPack()
+  }
+  receiveLink(process.argv)
+
+  app.on('second-instance', (_e, argv) => {
+    receiveLink(argv)
+    if (win) bringToFront(win)
   })
 
   app.on('window-all-closed', () => app.quit())
@@ -115,9 +138,43 @@ function startApp(): void {
 
     Menu.setApplicationMenu(null)
     win = createWindow(path.join(dataDir, 'window.json'))
+    // Lancée par un lien : au premier plan dès son affichage (après le show() de createWindow).
+    if (pendingPack) win.once('ready-to-show', () => win && bringToFront(win))
+    // isLoading() est encore vrai pendant did-finish-load : d'où l'indicateur.
+    win.webContents.on('did-finish-load', () => {
+      pageLoaded = true
+      sendPendingPack()
+    })
     service.startBackground()
     nativeTheme.on('updated', () => win?.setBackgroundColor(windowBackground()))
   })
+}
+
+/**
+ * Associe les liens « fivem-pack-manager:// » à cet exécutable (HKCU). L'installateur le fait aussi ; ici pour la version
+ * portable (le .exe portable, pas sa copie décompressée dans le dossier temporaire) et en développement (electron relancé
+ * avec le dossier de l'application : getAppPath plutôt que argv[1], qui peut être une option comme --inspect).
+ */
+function registerProtocol(): void {
+  const portable = process.env.PORTABLE_EXECUTABLE_FILE
+  const ok = !app.isPackaged
+    ? app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [app.getAppPath()])
+    : portable
+      ? app.setAsDefaultProtocolClient(PROTOCOL, portable, [])
+      : app.setAsDefaultProtocolClient(PROTOCOL)
+  if (!ok) log.warn(`Liens ${PROTOCOL}:// non associés à l'application.`)
+}
+
+/** Fenêtre au premier plan (lien reçu, application relancée) : le site vérifie que sa page perd le focus. */
+function bringToFront(win: BrowserWindow): void {
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.focus()
+  // Windows peut refuser le premier plan à une application en arrière-plan, sans que isFocused() le montre (il reste
+  // vrai) : la passer un instant au-dessus des autres fenêtres dans tous les cas.
+  win.setAlwaysOnTop(true)
+  win.focus()
+  win.setAlwaysOnTop(false)
 }
 
 interface Bounds {

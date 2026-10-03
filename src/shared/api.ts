@@ -132,6 +132,8 @@ export interface PackManagerApi {
   onUpdate(cb: (s: UpdateState) => void): () => void
   /** Connexion, déconnexion, profil modifié ou connexion expirée. */
   onAccount(cb: (me: AccountMe | null) => void): () => void
+  /** Lien « fivem-pack-manager://pack/<id> » reçu du site : ouvrir la fiche de ce pack dans la Marketplace. */
+  onOpenMarketPack(cb: (id: string) => void): () => void
 }
 
 export interface MarketQuery {
@@ -154,5 +156,9 @@ export const IPC = {
   task: 'pm:task',
   changed: 'pm:changed',
   update: 'pm:update',
-  account: 'pm:account'
+  account: 'pm:account',
+  openMarketPack: 'pm:open-market-pack'
 } as const
+
+/** Erreur de marketDetail quand l'API ne connaît pas (ou plus) le pack : inutile de réessayer. */
+export const PACK_GONE = 'Ce pack n’est plus disponible sur la Marketplace.'

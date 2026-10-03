@@ -76,6 +76,17 @@ export function App() {
     }
   }, [run])
 
+  // Lien « Installer via l'app » du site : fiche du pack dans la Marketplace, comme un clic sur sa carte.
+  useEffect(
+    () =>
+      window.api.onOpenMarketPack((id) => {
+        setPage('market')
+        setOpenPack(null)
+        setMarketStack([{ kind: 'pack', id }])
+      }),
+    []
+  )
+
   if (!overview) return <div className="app" />
   const detail = openPack ? overview.library.find((p) => p.id === openPack) : null
   const { games } = overview

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import type { AuthorProfile, AuthorSummary, MarketPack, MarketPackDetail, MarketPage, MarketTag, PackManifest, TaskProgress } from '@shared/types'
-import type { MarketQuery } from '@shared/api'
+import { PACK_GONE, type MarketQuery } from '@shared/api'
 import { cleanError, useStore } from '../store'
 import { bytes, marketImageUrl } from '../lib/format'
 import { Gallery } from './Gallery'
@@ -455,9 +455,12 @@ function MarketDetail({ id, back, onOpen, onOpenLocal }: Nav & { id: string; bac
         {back}
         <div className="empty-state">
           <p>{error}</p>
-          <p>
-            <button onClick={() => void load()}>Réessayer</button>
-          </p>
+          {/* Pack retiré ou inconnu de l'API (lien du site périmé) : réessayer ne servirait à rien. */}
+          {error !== PACK_GONE && (
+            <p>
+              <button onClick={() => void load()}>Réessayer</button>
+            </p>
+          )}
         </div>
       </div>
     )

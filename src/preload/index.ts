@@ -3,7 +3,14 @@ import type { PackManagerApi } from '../shared/api'
 import type { AccountMe, TaskProgress, UpdateState } from '../shared/types'
 
 // Canaux dupliqués ici : un preload « sandbox » ne peut importer que le module electron.
-const IPC = { invoke: 'pm:invoke', task: 'pm:task', changed: 'pm:changed', update: 'pm:update', account: 'pm:account' }
+const IPC = {
+  invoke: 'pm:invoke',
+  task: 'pm:task',
+  changed: 'pm:changed',
+  update: 'pm:update',
+  account: 'pm:account',
+  openMarketPack: 'pm:open-market-pack'
+}
 
 const call =
   (method: string) =>
@@ -92,6 +99,24 @@ api.onAccount = (cb: (me: AccountMe | null) => void) => {
   const h = (_e: unknown, me: AccountMe | null): void => cb(me)
   ipcRenderer.on(IPC.account, h)
   return () => ipcRenderer.removeListener(IPC.account, h)
+}
+
+// Pack demandé par un lien du site : gardé s'il arrive avant que l'interface ne s'abonne (démarrage).
+const marketPackListeners = new Set<(id: string) => void>()
+let pendingMarketPack: string | null = null
+ipcRenderer.on(IPC.openMarketPack, (_e: unknown, id: string) => {
+  if (marketPackListeners.size) marketPackListeners.forEach((cb) => cb(id))
+  else pendingMarketPack = id
+})
+api.onOpenMarketPack = (cb: (id: string) => void) => {
+  marketPackListeners.add(cb)
+  if (pendingMarketPack) {
+    cb(pendingMarketPack)
+    pendingMarketPack = null
+  }
+  return () => {
+    marketPackListeners.delete(cb)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

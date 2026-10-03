@@ -16,7 +16,7 @@ import { pipeline } from 'node:stream/promises'
 import { pathToFileURL } from 'node:url'
 import { net } from 'electron'
 import type { AuthorPage, AuthorProfile, MarketPack, MarketPackDetail, MarketPage, MarketTag, ProfileLink } from '@shared/types'
-import type { AuthorQuery, MarketQuery } from '@shared/api'
+import { PACK_GONE, type AuthorQuery, type MarketQuery } from '@shared/api'
 import { toAuthorRef } from './account'
 import type { Report } from './installer'
 import type { ImportProgress, Library, StoredManifest } from './library'
@@ -177,7 +177,7 @@ export class Marketplace {
 
   // ------------------------------------------------------------------ lecture
 
-  private async get<T>(pathAndQuery: string, notFound = 'Ce pack n’est plus disponible sur la Marketplace.'): Promise<T> {
+  private async get<T>(pathAndQuery: string, notFound = PACK_GONE): Promise<T> {
     let response: Response
     try {
       response = await net.fetch(`${this.apiUrl}${pathAndQuery}`, { signal: AbortSignal.timeout(20_000) })
