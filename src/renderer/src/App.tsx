@@ -87,10 +87,10 @@ export function App() {
     []
   )
 
-  if (!overview) return <div className="app" />
-  const detail = openPack ? overview.library.find((p) => p.id === openPack) : null
-  const { games } = overview
-  const gameProblem = !games.fivem.valid ? 'FiveM introuvable' : !games.gta.valid ? 'GTA V introuvable' : games.gta.edition === 'enhanced' ? 'GTA V Enhanced' : null
+  // Barre latérale affichée dès le premier rendu ; les pages attendent l'état de l'application.
+  const detail = openPack ? overview?.library.find((p) => p.id === openPack) : null
+  const games = overview?.games
+  const gameProblem = !games ? null : !games.fivem.valid ? 'FiveM introuvable' : !games.gta.valid ? 'GTA V introuvable' : games.gta.edition === 'enhanced' ? 'GTA V Enhanced' : null
   const go = (p: Page): void => {
     setPage(p)
     setOpenPack(null)
@@ -147,22 +147,26 @@ export function App() {
       </aside>
 
       <main className="layer">
-        {page === 'library' && (detail ? <PackDetail pack={detail} onBack={() => setOpenPack(null)} /> : <Library onOpen={setOpenPack} />)}
-        {page === 'market' && (
-          <Marketplace
-            view={marketStack[marketStack.length - 1] ?? null}
-            depth={marketStack.length}
-            onOpen={(v) => setMarketStack((s) => [...s, v])}
-            onBack={() => setMarketStack((s) => s.slice(0, -1))}
-            onOpenLocal={openLocal}
-            author={marketAuthor}
-            onAuthor={setMarketAuthor}
-          />
+        {overview && (
+          <>
+            {page === 'library' && (detail ? <PackDetail pack={detail} onBack={() => setOpenPack(null)} /> : <Library onOpen={setOpenPack} />)}
+            {page === 'market' && (
+              <Marketplace
+                view={marketStack[marketStack.length - 1] ?? null}
+                depth={marketStack.length}
+                onOpen={(v) => setMarketStack((s) => [...s, v])}
+                onBack={() => setMarketStack((s) => s.slice(0, -1))}
+                onOpenLocal={openLocal}
+                author={marketAuthor}
+                onAuthor={setMarketAuthor}
+              />
+            )}
+            {page === 'graphics' && <Graphics />}
+            {page === 'cleanup' && <Cleanup />}
+            {page === 'account' && <AccountView onOpenAuthor={openAuthor} />}
+            {page === 'settings' && <SettingsView />}
+          </>
         )}
-        {page === 'graphics' && <Graphics />}
-        {page === 'cleanup' && <Cleanup />}
-        {page === 'account' && <AccountView onOpenAuthor={openAuthor} />}
-        {page === 'settings' && <SettingsView />}
 
         {message && (
           <div className={`bar bar-${message.kind} floating`} role="status">
