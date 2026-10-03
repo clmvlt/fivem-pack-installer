@@ -309,7 +309,20 @@ function MarketCard({
           {others}
         </div>
         <div className="card-foot" onClick={(e) => e.stopPropagation()}>
-          {mine ? <Progress task={mine} /> : <MarketAction item={item} library={library} task={task} onOpenLocal={onOpenLocal} />}
+          {mine ? (
+            <Progress task={mine} />
+          ) : (
+            <>
+              <span className="dl-count" title={plural(item.downloadCount, 'téléchargement', 'téléchargements')}>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                  <path d="M7.25 1.5h1.5v7.19l2.47-2.47 1.06 1.06L8 11.56 3.72 7.28l1.06-1.06 2.47 2.47z" />
+                  <path d="M2 13h12v1.5H2z" />
+                </svg>
+                {item.downloadCount.toLocaleString('fr-FR')}
+              </span>
+              <MarketAction item={item} library={library} task={task} onOpenLocal={onOpenLocal} />
+            </>
+          )}
         </div>
       </div>
     </article>

@@ -1398,6 +1398,14 @@ button.google {
 .author-chip.is-selected .author-chip-name {
   font-weight: 600;
 }
+.dl-count {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
 .author-filter {
   display: flex;
   align-items: center;
