@@ -1,12 +1,12 @@
 # Reflect FiveM
 
-[![CI](https://github.com/clmvlt/fivem-pack-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/clmvlt/fivem-pack-installer/actions/workflows/ci.yml)
+[![CI](https://github.com/clmvlt/reflect-fivem/actions/workflows/ci.yml/badge.svg)](https://github.com/clmvlt/reflect-fivem/actions/workflows/ci.yml)
 
 Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReShade, mods `.rpf`) sans déplacer de fichiers à la main.
 
 Anciennement « FiveM Pack Manager ». L'exécutable, l'installateur, le dossier de données (`%LOCALAPPDATA%\FiveM Pack Manager\`) et les liens `fivem-pack-manager://` gardent ce nom : les mises à jour automatiques et les bibliothèques déjà installées continuent de fonctionner.
 
-**Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/fivem-pack-installer/releases/latest) (installateur ou version portable), aussi accessible depuis [reflect-fivem.com/application](https://reflect-fivem.com/application).
+**Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/reflect-fivem/releases/latest) (installateur ou version portable), aussi accessible depuis [reflect-fivem.com/application](https://reflect-fivem.com/application).
 
 ## Utilisation
 

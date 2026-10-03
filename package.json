@@ -8,10 +8,10 @@
   "homepage": "https://reflect-fivem.com/application",
   "repository": {
     "type": "git",
-    "url": "https://github.com/clmvlt/fivem-pack-installer.git"
+    "url": "https://github.com/clmvlt/reflect-fivem.git"
   },
   "bugs": {
-    "url": "https://github.com/clmvlt/fivem-pack-installer/issues"
+    "url": "https://github.com/clmvlt/reflect-fivem/issues"
   },
   "private": true,
   "main": "./out/main/index.js",
