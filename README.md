@@ -4,7 +4,7 @@
 
 Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReShade, mods `.rpf`) sans déplacer de fichiers à la main.
 
-Anciennement « FiveM Pack Manager ». L'exécutable, l'installateur, le dossier de données (`%LOCALAPPDATA%\FiveM Pack Manager\`) et les liens `fivem-pack-manager://` gardent ce nom : les mises à jour automatiques et les bibliothèques déjà installées continuent de fonctionner.
+Anciennement « FiveM Pack Manager ». La mise à jour vers le nouveau nom se fait automatiquement : raccourcis recréés sous le nouveau nom, dossier de données renommé au premier lancement (avec la bibliothèque qu'il contient). Restent sous l'ancien nom, pour ne rien casser : l'identifiant d'installation (`appId`), le dossier d'installation d'une installation existante et les liens `fivem-pack-manager://` du site.
 
 **Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/reflect-fivem/releases/latest) (installateur ou version portable), aussi accessible depuis [reflect-fivem.com/application](https://reflect-fivem.com/application).
 
@@ -44,7 +44,7 @@ Les mods installés à la main avant l'application apparaissent sur la carte « 
 
 ## Données
 
-`%LOCALAPPDATA%\FiveM Pack Manager\` : bibliothèque de packs (`Bibliotheque\`), `settings.json`, `state.json`, `logs\`, cache des images de la Marketplace (`Marketplace\`). Le dossier des packs peut être déplacé depuis « Réglages ». Un téléchargement interrompu reprend là où il s'était arrêté (`Bibliotheque\.downloads\`).
+`%LOCALAPPDATA%\Reflect FiveM\` (`FiveM Pack Manager\` avant le changement de nom, renommé au premier lancement) : bibliothèque de packs (`Bibliotheque\`), `settings.json`, `state.json`, `logs\`, cache des images de la Marketplace (`Marketplace\`). Le dossier des packs peut être déplacé depuis « Réglages ». Un téléchargement interrompu reprend là où il s'était arrêté (`Bibliotheque\.downloads\`).
 
 Compte : `account.dat` contient le jeton de connexion et le dernier état connu du compte (nom, e-mail, photo), chiffrés par Windows pour votre compte (DPAPI). Il est supprimé à la déconnexion, ou quand le serveur indique que le jeton a expiré ou a été révoqué. Les photos des auteurs sont gardées avec les images de la Marketplace (`Marketplace\images\avatar-*.jpg`).
 

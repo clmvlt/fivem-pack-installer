@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, ipcMain, Menu, nativeTheme, net, protocol, screen, session, shell } from 'electron'
 import { IPC } from '@shared/api'
+import { resolveDataDir } from './core/dataDir'
 import { describeLink, findDeepLink, parsePackLink, PROTOCOL } from './core/deepLink'
 import { EXEC_FLAG, runElevatedWorker } from './core/elevation'
 import { Service } from './service'
@@ -27,9 +28,10 @@ if (isElevatedWorker) {
 function startApp(): void {
   const localAppData = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local')
   // PM_DATA_DIR : dossier de données alternatif (tests, installation portable).
-  const dataDir = process.env.PM_DATA_DIR || path.join(localAppData, 'FiveM Pack Manager')
+  const { dir: dataDir, note } = process.env.PM_DATA_DIR ? { dir: process.env.PM_DATA_DIR, note: null } : resolveDataDir(localAppData)
   app.setPath('userData', path.join(dataDir, 'app'))
   log.init(path.join(dataDir, 'logs'))
+  if (note) log.info(note)
 
   if (!app.requestSingleInstanceLock()) {
     app.quit()
