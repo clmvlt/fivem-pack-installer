@@ -1,3 +1,5 @@
+import type { UpdateState } from '@shared/types'
+import { bytes } from '../lib/format'
 import { useStore } from '../store'
 
 /**
@@ -9,15 +11,29 @@ export function UpdatePanel() {
   if (!update) return null
   const { status, version } = update
 
-  if (status === 'downloading' || status === 'verifying')
+  if (status === 'downloading' || status === 'verifying') {
+    const verifying = status === 'verifying'
+    const percent = Math.min(100, update.percent ?? 0)
     return (
-      <div className="update-panel">
-        <span>{status === 'verifying' ? `Vérification de la version ${version}…` : `Téléchargement de la version ${version}`}</span>
-        <div className="track">
-          <div className={`fill ${status === 'verifying' ? 'is-waiting' : ''}`} style={status === 'verifying' ? undefined : { width: `${update.percent ?? 0}%` }} />
+      <div className="update-panel" role="status" aria-live="polite">
+        <div className="update-head">
+          <span className="update-title">Mise à jour {version}</span>
+          {!verifying && <span className="pct">{percent} %</span>}
         </div>
+        <div
+          className="track"
+          role="progressbar"
+          aria-label={verifying ? 'Vérification de la mise à jour' : 'Téléchargement de la mise à jour'}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={verifying ? undefined : percent}
+        >
+          <div className={`fill ${verifying ? 'is-waiting' : ''}`} style={verifying ? undefined : { width: `${percent}%` }} />
+        </div>
+        <span className="update-sub">{verifying ? 'Vérification de la signature…' : downloadText(update)}</span>
       </div>
     )
+  }
   if (status === 'ready')
     return (
       <div className="update-panel">
@@ -42,4 +58,10 @@ export function UpdatePanel() {
       </div>
     )
   return null
+}
+
+/** « 12 Mo sur 85 Mo », ou seulement « Téléchargement… » tant que la taille est inconnue. */
+function downloadText(update: UpdateState): string {
+  if (!update.total) return 'Téléchargement…'
+  return `${bytes(update.transferred ?? 0)} sur ${bytes(update.total)}`
 }

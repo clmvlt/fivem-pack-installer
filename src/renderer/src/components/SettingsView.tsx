@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Check, GameCandidate, HistoryEntry, RootId, UpdateState } from '@shared/types'
+import { bytes } from '../lib/format'
 import { useStore } from '../store'
 
 const STORE_LABEL: Record<string, string> = { rockstar: 'Rockstar Games Launcher', steam: 'Steam', epic: 'Epic Games' }
@@ -178,7 +179,9 @@ function updateText(update: UpdateState | null): string {
     case 'available':
       return update.manual ? `Version ${update.version} disponible sur le site.` : `Version ${update.version} disponible.`
     case 'downloading':
-      return `Téléchargement de la version ${update.version} (${update.percent ?? 0} %).`
+      return update.total
+        ? `Téléchargement de la version ${update.version} : ${bytes(update.transferred ?? 0)} sur ${bytes(update.total)} (${update.percent ?? 0} %).`
+        : `Téléchargement de la version ${update.version} (${update.percent ?? 0} %).`
     case 'verifying':
       return `Vérification de la version ${update.version}…`
     case 'ready':

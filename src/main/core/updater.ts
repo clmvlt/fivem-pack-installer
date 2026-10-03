@@ -102,7 +102,7 @@ export class AppUpdater {
     autoUpdater.setFeedURL({ provider: 'generic', url: `${this.apiUrl}/app/updates` })
 
     autoUpdater.on('download-progress', (p) => {
-      this.set({ ...this.state, status: 'downloading', percent: Math.round(p.percent) })
+      this.set({ ...this.state, status: 'downloading', percent: Math.floor(p.percent), transferred: p.transferred, total: p.total })
     })
     autoUpdater.on('update-downloaded', (event) => {
       void this.verifyInstaller(event.downloadedFile, event.version)
@@ -188,7 +188,7 @@ export class AppUpdater {
   private async downloadPortable(release: RemoteRelease, file: RemoteFile): Promise<void> {
     const workDir = path.join(app.getPath('temp'), 'FiveM Pack Manager', 'mise-a-jour')
     const target = path.join(workDir, `${release.version}-${file.fileName}`)
-    this.set({ status: 'downloading', version: release.version, notes: release.notes, percent: 0, checkedAt: now() })
+    this.set({ status: 'downloading', version: release.version, notes: release.notes, percent: 0, transferred: 0, total: file.size, checkedAt: now() })
     try {
       await fs.mkdir(workDir, { recursive: true })
       const already = await fs.stat(target).catch(() => null)
@@ -200,7 +200,7 @@ export class AppUpdater {
         body.on('data', (chunk: Buffer) => {
           received += chunk.length
           const percent = Math.floor((received * 100) / file.size)
-          if (percent !== this.state.percent) this.set({ ...this.state, percent })
+          if (percent !== this.state.percent) this.set({ ...this.state, percent, transferred: received })
         })
         await pipeline(body, createWriteStream(`${target}.part`))
         await fs.rename(`${target}.part`, target)

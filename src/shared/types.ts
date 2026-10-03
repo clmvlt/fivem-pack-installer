@@ -422,6 +422,9 @@ export interface UpdateState {
   version?: string
   notes?: string
   percent?: number
+  /** Octets reçus et taille totale pendant le téléchargement. */
+  transferred?: number
+  total?: number
   error?: string
   /** La nouvelle version se télécharge sur le site (application lancée depuis ses sources, dossier non modifiable). */
   manual?: boolean

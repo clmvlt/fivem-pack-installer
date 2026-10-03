@@ -356,6 +356,21 @@ input[type='checkbox'] {
 .fill.is-waiting {
   width: 30%;
   opacity: 0.6;
+  animation: fill-waiting 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+/* Durée inconnue : un segment qui traverse la barre, plutôt qu'une barre figée à 30 %. */
+@keyframes fill-waiting {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fill.is-waiting {
+    animation: none;
+  }
 }
 .progress-label {
   flex: none;
@@ -1109,8 +1124,37 @@ input[type='checkbox'] {
   background: var(--surface);
   font-size: 12px;
 }
+/* Dans la colonne du panneau, flex: 1 écraserait la hauteur de la barre à 0. */
 .update-panel .track {
+  flex: none;
   width: 100%;
+  height: 6px;
+  border-radius: 3px;
+}
+.update-panel .fill {
+  border-radius: inherit;
+  transition: width 0.4s ease-out;
+}
+.update-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.update-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.update-head .pct {
+  width: auto;
+  flex: none;
+  color: var(--text);
+}
+.update-sub {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ------------------------------------------------------------ Compte et auteurs */
