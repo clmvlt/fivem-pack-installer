@@ -24,43 +24,60 @@ export interface RegistrySnapshot {
   uninstall: { name: string; location: string; key: string }[]
 }
 
-/** Lit en une seule fois toutes les clés de registre utiles à la détection des jeux. */
+/**
+ * Lit en une seule fois toutes les clés de registre utiles à la détection des jeux. Par l'API .NET plutôt que par
+ * Get-ItemProperty / Get-ChildItem : bien plus rapide sur les centaines de clés « Uninstall ».
+ */
 export async function readRegistry(): Promise<RegistrySnapshot> {
   const script = String.raw`
+$LM = [Microsoft.Win32.Registry]::LocalMachine
+$CU = [Microsoft.Win32.Registry]::CurrentUser
+function Val($hive, $key, $name) {
+  $k = $hive.OpenSubKey($key)
+  if (-not $k) { return $null }
+  try { return $k.GetValue($name) } finally { $k.Close() }
+}
 $r = @{}
 $paths = @()
 $keys = @(
-  @{ k = 'HKLM:\SOFTWARE\WOW6432Node\Rockstar Games\Grand Theft Auto V'; e = $false },
-  @{ k = 'HKLM:\SOFTWARE\Rockstar Games\Grand Theft Auto V'; e = $false },
-  @{ k = 'HKLM:\SOFTWARE\WOW6432Node\Rockstar Games\GTAV'; e = $false },
-  @{ k = 'HKLM:\SOFTWARE\WOW6432Node\Rockstar Games\GTAV Enhanced'; e = $true },
-  @{ k = 'HKLM:\SOFTWARE\WOW6432Node\Rockstar Games\GTA V Enhanced'; e = $true }
+  @{ k = 'SOFTWARE\WOW6432Node\Rockstar Games\Grand Theft Auto V'; e = $false },
+  @{ k = 'SOFTWARE\Rockstar Games\Grand Theft Auto V'; e = $false },
+  @{ k = 'SOFTWARE\WOW6432Node\Rockstar Games\GTAV'; e = $false },
+  @{ k = 'SOFTWARE\WOW6432Node\Rockstar Games\GTAV Enhanced'; e = $true },
+  @{ k = 'SOFTWARE\WOW6432Node\Rockstar Games\GTA V Enhanced'; e = $true }
 )
 foreach ($entry in $keys) {
-  $i = Get-ItemProperty -LiteralPath $entry.k
-  if (-not $i) { continue }
+  $k = $LM.OpenSubKey($entry.k)
+  if (-not $k) { continue }
   foreach ($v in 'InstallFolder','InstallFolderSteam','InstallFolderEpic','InstallFolderXboxPc') {
-    $val = [string]$i.$v
+    $val = [string]$k.GetValue($v)
     if ($val) {
       if ($v -eq 'InstallFolderSteam') { $val = $val -replace '\\GTAV$','' }
       $paths += @{ path = $val; source = "Registre Rockstar ($v)"; enhanced = $entry.e }
     }
   }
+  $k.Close()
 }
 $r.rockstarPaths = $paths
-$s = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Valve\Steam').SteamPath
-if (-not $s) { $s = (Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam').InstallPath }
+$s = Val $CU 'Software\Valve\Steam' 'SteamPath'
+if (-not $s) { $s = Val $LM 'SOFTWARE\WOW6432Node\Valve\Steam' 'InstallPath' }
 $r.steamPath = $s
-$r.fivemLastRun = (Get-ItemProperty -LiteralPath 'HKCU:\Software\CitizenFX\FiveM').'Last Run Location'
-$r.fivemProtocol = (Get-ItemProperty -LiteralPath 'HKCU:\Software\Classes\FiveM.ProtocolHandler\shell\open\command').'(default)'
+$r.fivemLastRun = Val $CU 'Software\CitizenFX\FiveM' 'Last Run Location'
+$r.fivemProtocol = Val $CU 'Software\Classes\FiveM.ProtocolHandler\shell\open\command' ''
 $u = @()
-foreach ($root in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall') {
-  Get-ChildItem -LiteralPath $root | ForEach-Object {
-    $p = Get-ItemProperty -LiteralPath $_.PSPath
-    if ($p.DisplayName -match 'Grand Theft Auto|FiveM|GTA V' -or $_.PSChildName -match 'Steam App (271590|3240220)|CitizenFX') {
-      $u += @{ name = [string]$p.DisplayName; location = [string]$p.InstallLocation; key = [string]$_.PSChildName }
+foreach ($root in @(@($LM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'), @($LM, 'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'), @($CU, 'Software\Microsoft\Windows\CurrentVersion\Uninstall'))) {
+  $k = $root[0].OpenSubKey($root[1])
+  if (-not $k) { continue }
+  foreach ($name in $k.GetSubKeyNames()) {
+    $sub = $k.OpenSubKey($name)
+    if (-not $sub) { continue }
+    $dn = [string]$sub.GetValue('DisplayName')
+    if ($dn -match 'Grand Theft Auto|FiveM|GTA V' -or $name -match 'Steam App (271590|3240220)|CitizenFX') {
+      $u += @{ name = $dn; location = [string]$sub.GetValue('InstallLocation'); key = $name }
     }
+    $sub.Close()
   }
+  $k.Close()
 }
 $r.uninstall = $u
 $r | ConvertTo-Json -Depth 4 -Compress
