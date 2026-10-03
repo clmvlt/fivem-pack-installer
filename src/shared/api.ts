@@ -1,4 +1,19 @@
-import type { ForeignItem, GamesInfo, MarketPackDetail, MarketPage, MarketTag, Overview, PackManifest, PackPatch, RootId, TaskProgress, UpdateState } from './types'
+import type {
+  AccountMe,
+  AccountProfile,
+  ForeignItem,
+  GamesInfo,
+  MarketPackDetail,
+  MarketPage,
+  MarketTag,
+  Overview,
+  PackManifest,
+  PackPatch,
+  ProfileInput,
+  RootId,
+  TaskProgress,
+  UpdateState
+} from './types'
 import type { GraphicsState, GraphicsTarget } from './graphics'
 
 export interface ComponentFile {
@@ -78,6 +93,24 @@ export interface PackManagerApi {
   /** Ouvre une page du site des packs dans le navigateur (« /packs/<adresse> », « /application »). */
   openSite(path: string): Promise<void>
 
+  /** Compte connecté sur cet appareil (gardé localement, vérifié en arrière-plan), null sans compte. */
+  accountGet(): Promise<AccountMe | null>
+  /** Connexion par e-mail (ou identifiant) et mot de passe. */
+  accountLogin(login: string, password: string): Promise<AccountMe>
+  accountRegister(email: string, password: string, displayName: string): Promise<AccountMe>
+  /** Ouvre la connexion Google dans le navigateur et attend son retour (5 minutes au plus). */
+  accountLoginGoogle(): Promise<AccountMe>
+  /** Abandonne la connexion Google en attente. */
+  accountCancelGoogle(): Promise<void>
+  accountLogout(): Promise<void>
+  accountProfile(): Promise<AccountProfile>
+  accountSaveProfile(input: ProfileInput): Promise<AccountProfile>
+  /** Choisit une photo sur le disque et l'envoie (null si aucun fichier n'a été choisi). */
+  accountPickAvatar(): Promise<AccountProfile | null>
+  accountRemoveAvatar(): Promise<AccountProfile>
+  /** currentPassword : null pour un compte qui n'a pas encore de mot de passe. */
+  accountChangePassword(currentPassword: string | null, newPassword: string): Promise<AccountMe>
+
   /** Recherche une mise à jour ; une nouvelle version est ensuite téléchargée et vérifiée automatiquement. */
   checkForUpdates(): Promise<UpdateState>
   /** Ferme l'application et installe tout de suite la mise à jour téléchargée et vérifiée. */
@@ -86,6 +119,8 @@ export interface PackManagerApi {
   onTask(cb: (p: TaskProgress) => void): () => void
   onChanged(cb: () => void): () => void
   onUpdate(cb: (s: UpdateState) => void): () => void
+  /** Connexion, déconnexion, profil modifié ou connexion expirée. */
+  onAccount(cb: (me: AccountMe | null) => void): () => void
 }
 
 export interface MarketQuery {
@@ -99,5 +134,6 @@ export const IPC = {
   invoke: 'pm:invoke',
   task: 'pm:task',
   changed: 'pm:changed',
-  update: 'pm:update'
+  update: 'pm:update',
+  account: 'pm:account'
 } as const

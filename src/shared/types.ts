@@ -338,6 +338,65 @@ export interface MarketTag {
 }
 
 // ---------------------------------------------------------------------------
+// Comptes et auteurs
+
+/** Auteur d'un pack. */
+export interface AuthorRef {
+  id: number
+  slug: string
+  displayName: string
+  /** Photo servie par le processus principal (pm-media://avatar/<compte>/<version>), null sans photo. */
+  avatarUrl: string | null
+}
+
+export interface ProfileLink {
+  label: string
+  url: string
+}
+
+/** Page publique d'un auteur. Ses packs : marketList({ author: slug }). */
+export interface AuthorProfile extends AuthorRef {
+  bio: string
+  links: ProfileLink[]
+  createdAt: string | null
+  packCount: number
+  downloads: number
+}
+
+/** Compte connecté sur cet appareil. */
+export interface AccountMe {
+  id: number
+  /** Identifiant du compte d'administration d'origine (null pour les autres). */
+  username: string | null
+  email: string | null
+  displayName: string
+  slug: string
+  /** pm-media://avatar/..., null sans photo. */
+  avatarUrl: string | null
+  role: 'user' | 'admin'
+  admin: boolean
+  canPublish: boolean
+  /** Mot de passe imposé : à changer avant toute autre action. */
+  mustChangePassword: boolean
+  /** Faux pour un compte créé par Google qui n'a pas encore de mot de passe. */
+  hasPassword: boolean
+  googleLinked: boolean
+}
+
+/** Profil complet du compte connecté. */
+export interface AccountProfile extends Omit<AccountMe, 'mustChangePassword'> {
+  bio: string
+  links: ProfileLink[]
+  createdAt: string | null
+}
+
+export interface ProfileInput {
+  displayName: string
+  bio: string
+  links: ProfileLink[]
+}
+
+// ---------------------------------------------------------------------------
 // Mises à jour de l'application
 
 export interface UpdateState {

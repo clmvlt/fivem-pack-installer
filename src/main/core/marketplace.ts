@@ -5,7 +5,8 @@
 // Pack chiffré : le serveur n'envoie jamais son archive mais un paquet chiffré, gardé tel quel dans la bibliothèque
 // (pack protégé, voir library.ts), et sa clé.
 // Le pack garde un lien vers sa fiche (marketplace.id / sha256) : une autre empreinte en ligne signale une
-// nouvelle version. Les images sont servies à l'interface par pm-media://market/... avec un cache sur le disque.
+// nouvelle version. Les images sont servies à l'interface par pm-media://market/... avec un cache sur le disque, les
+// photos des auteurs par pm-media://avatar/... (même cache).
 
 import { createHash } from 'node:crypto'
 import { createReadStream, createWriteStream, promises as fs } from 'node:fs'
@@ -79,6 +80,8 @@ export interface InstallResult {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const USER_ID = /^\d{1,18}$/
+const AVATAR_VERSION = /^[A-Za-z0-9_-]{1,64}$/
 const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/
 const IMAGE_CACHE_MAX = 300 * 1024 * 1024
 
@@ -230,6 +233,26 @@ export class Marketplace {
     if (await exists(file)) return net.fetch(pathToFileURL(file).toString())
     try {
       const data = await this.fetchImage(packId, imageId, thumb)
+      await fs.mkdir(this.cacheDir, { recursive: true })
+      const tmp = `${file}.${process.pid}.tmp`
+      await fs.writeFile(tmp, data)
+      await fs.rename(tmp, file).catch(() => fs.rm(tmp, { force: true }))
+      return new Response(new Uint8Array(data), { headers: { 'Content-Type': 'image/jpeg' } })
+    } catch {
+      return new Response('', { status: 404 })
+    }
+  }
+
+  /** pm-media://avatar/<compte>/<version> : photo d'un compte, en cache (l'adresse change avec la photo). */
+  async avatar(userId: string, version: string): Promise<Response> {
+    if (!USER_ID.test(userId) || !AVATAR_VERSION.test(version)) return new Response('Interdit', { status: 403 })
+    const file = path.join(this.cacheDir, `avatar-${userId}-${version}.jpg`)
+    if (await exists(file)) return net.fetch(pathToFileURL(file).toString())
+    try {
+      const response = await net.fetch(`${this.apiUrl}/users/${userId}/avatar?v=${version}`, { signal: AbortSignal.timeout(30_000) })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = Buffer.from(await response.arrayBuffer())
+      if (data[0] !== 0xff || data[1] !== 0xd8) throw new Error('Image invalide')
       await fs.mkdir(this.cacheDir, { recursive: true })
       const tmp = `${file}.${process.pid}.tmp`
       await fs.writeFile(tmp, data)

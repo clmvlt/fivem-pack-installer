@@ -45,6 +45,18 @@ export function Cover({ pack, rel }: { pack: PackManifest; rel?: string }) {
   return <img className="cover-img" src={mediaUrl(pack.id, src)} alt="" draggable={false} onError={() => setFailed(src)} />
 }
 
+/** Photo d'un compte (pm-media://avatar/...), ou son initiale s'il n'en a pas. */
+export function Avatar({ url, name, size }: { url: string | null; name: string; size: number }) {
+  const [failed, setFailed] = useState<string | null>(null)
+  const style = { width: size, height: size, fontSize: Math.round(size * 0.42) }
+  if (url && failed !== url) return <img className="avatar" style={style} src={url} alt="" draggable={false} onError={() => setFailed(url)} />
+  return (
+    <span className="avatar" style={style} aria-hidden>
+      {(name.trim()[0] ?? '?').toUpperCase()}
+    </span>
+  )
+}
+
 /** Menu natif d'un pack (clic droit ou ⋯). Retourne true si le renommage est demandé. */
 export async function packMenuAction(pack: PackManifest, run: <T>(fn: () => Promise<T>) => Promise<T | undefined>): Promise<boolean> {
   const choice = await window.api.packMenu(pack.id)

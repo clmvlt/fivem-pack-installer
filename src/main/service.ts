@@ -2,14 +2,16 @@
 
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { app, BrowserWindow, dialog, Menu, nativeImage, safeStorage, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, dialog, Menu, nativeImage, net, safeStorage, shell, systemPreferences } from 'electron'
 import type { AppState, GamesInfo, Overview, PackPatch, RootId, Settings, TaskProgress } from '@shared/types'
+import type { AccountMe, ProfileInput } from '@shared/types'
 import type { ComponentFile, ForeignSelection, MarketQuery, PackManagerApi } from '@shared/api'
 import { IPC } from '@shared/api'
 import { detectGames, inspectFiveM, inspectGta, normalizeFiveMPath } from './core/games'
 import { Installer, type Report } from './core/installer'
 import { FPS_LIMIT_MAX, FPS_LIMIT_MIN } from './core/enb'
-import { KeyRing } from './core/keys'
+import { Account, AVATAR_EXTENSIONS, TokenFile } from './core/account'
+import { KeyRing, type SystemProtection } from './core/keys'
 import { Library, toPublic } from './core/library'
 import { GraphicsManager } from './core/graphics'
 import { Marketplace } from './core/marketplace'
@@ -21,9 +23,16 @@ import { defaultSettings, emptyState, JsonStore, pushHistory } from './core/stor
 import { exists, isInside, moveDir } from './util/fsx'
 import { log } from './util/log'
 
-type ServerApi = Omit<PackManagerApi, 'onTask' | 'onChanged' | 'onUpdate' | 'getPathForFile'>
+type ServerApi = Omit<PackManagerApi, 'onTask' | 'onChanged' | 'onUpdate' | 'onAccount' | 'getPathForFile'>
 
 const MARKET_REFRESH = 6 * 60 * 60 * 1000
+
+/** Chiffrement de Windows (DPAPI) pour le compte de l'utilisateur. */
+const systemProtection: SystemProtection = {
+  available: () => safeStorage.isEncryptionAvailable(),
+  protect: (data) => safeStorage.encryptString(data.toString('base64')),
+  unprotect: (data) => Buffer.from(safeStorage.decryptString(data), 'base64')
+}
 
 export class Service {
   settings: JsonStore<Settings>
@@ -38,21 +47,22 @@ export class Service {
   private running: { id: string; abort: AbortController } | null = null
   /** Clés des packs protégés : clé locale gardée chiffrée par Windows (DPAPI), clés des paquets remises par l'API. */
   private keys: KeyRing
+  /** Compte packs.dimzou.fr (facultatif) : jeton gardé chiffré par Windows. */
+  account: Account
 
   constructor(
     public dataDir: string,
     private getWindow: () => BrowserWindow | null,
     public apiUrl: string
   ) {
-    this.keys = new KeyRing(
-      path.join(dataDir, 'protection.key'),
-      {
-        available: () => safeStorage.isEncryptionAvailable(),
-        protect: (data) => safeStorage.encryptString(data.toString('base64')),
-        unprotect: (data) => Buffer.from(safeStorage.decryptString(data), 'base64')
-      },
-      (marketId) => this.marketplace.packageKey(marketId)
-    )
+    this.keys = new KeyRing(path.join(dataDir, 'protection.key'), systemProtection, (marketId) => this.marketplace.packageKey(marketId))
+    this.account = new Account({
+      apiUrl,
+      store: new TokenFile(path.join(dataDir, 'account.dat'), systemProtection),
+      fetch: (url, init) => net.fetch(url, init),
+      openExternal: (url) => shell.openExternal(url),
+      onChange: (me) => this.emit(IPC.account, me)
+    })
     this.settings = new JsonStore(path.join(dataDir, 'settings.json'), defaultSettings(dataDir))
     this.state = new JsonStore(path.join(dataDir, 'state.json'), emptyState())
     this.graphics = new GraphicsManager(path.join(dataDir, 'Graphismes'))
@@ -80,6 +90,7 @@ export class Service {
     })
     await fs.rm(path.join(this.dataDir, 'jobs'), { recursive: true, force: true }).catch(() => undefined)
     this.marketplace = new Marketplace(this.apiUrl, path.join(this.dataDir, 'Marketplace', 'images'), () => this.library)
+    await this.account.init()
   }
 
   /** Tâches de fond : catalogue de la Marketplace (mises à jour des packs), caches, mises à jour de l'app. */
@@ -93,6 +104,8 @@ export class Service {
       }
     }
     setTimeout(() => {
+      // Compte : connexion expirée ou révoquée, nom ou photo modifiés sur le site.
+      this.account.refresh().catch((err: unknown) => log.info(`Compte non vérifié : ${(err as Error).message}`))
       void refreshMarket()
       void this.marketplace.pruneImageCache()
       void this.marketplace.pruneDownloads()
@@ -498,6 +511,48 @@ export class Service {
       if (!/^\/[a-z0-9/_-]*$/i.test(sitePath)) throw this.toError('Adresse invalide.')
       await shell.openExternal(this.marketplace.siteUrl(sitePath))
     },
+
+    accountGet: async () => this.account.current(),
+
+    accountLogin: (login: string, password: string) => this.account.login(login, password),
+
+    accountRegister: (email: string, password: string, displayName: string) => this.account.register(email, password, displayName),
+
+    accountLoginGoogle: async (): Promise<AccountMe> => {
+      const me = await this.account.loginWithGoogle()
+      // Retour au premier plan après la page Google.
+      const w = this.getWindow()
+      if (w && !w.isDestroyed()) {
+        if (w.isMinimized()) w.restore()
+        w.focus()
+      }
+      return me
+    },
+
+    accountCancelGoogle: async () => this.account.cancelGoogle(),
+
+    accountLogout: () => this.account.logout(),
+
+    accountProfile: () => this.account.profile(),
+
+    accountSaveProfile: (input: ProfileInput) => this.account.saveProfile(input),
+
+    accountPickAvatar: async () => {
+      const w = this.getWindow()
+      const opts = {
+        title: 'Photo de profil',
+        defaultPath: app.getPath('pictures'),
+        properties: ['openFile' as const],
+        filters: [{ name: 'Images', extensions: AVATAR_EXTENSIONS }]
+      }
+      const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts)
+      if (r.canceled || !r.filePaths[0]) return null
+      return this.account.setAvatarFile(r.filePaths[0])
+    },
+
+    accountRemoveAvatar: () => this.account.removeAvatar(),
+
+    accountChangePassword: (currentPassword: string | null, newPassword: string) => this.account.changePassword(currentPassword, newPassword),
 
     checkForUpdates: () => this.updater.check(),
 

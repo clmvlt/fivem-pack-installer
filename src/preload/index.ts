@@ -1,9 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { PackManagerApi } from '../shared/api'
-import type { TaskProgress, UpdateState } from '../shared/types'
+import type { AccountMe, TaskProgress, UpdateState } from '../shared/types'
 
 // Canaux dupliqués ici : un preload « sandbox » ne peut importer que le module electron.
-const IPC = { invoke: 'pm:invoke', task: 'pm:task', changed: 'pm:changed', update: 'pm:update' }
+const IPC = { invoke: 'pm:invoke', task: 'pm:task', changed: 'pm:changed', update: 'pm:update', account: 'pm:account' }
 
 const call =
   (method: string) =>
@@ -49,6 +49,17 @@ const methods = [
   'marketDetail',
   'marketInstall',
   'openSite',
+  'accountGet',
+  'accountLogin',
+  'accountRegister',
+  'accountLoginGoogle',
+  'accountCancelGoogle',
+  'accountLogout',
+  'accountProfile',
+  'accountSaveProfile',
+  'accountPickAvatar',
+  'accountRemoveAvatar',
+  'accountChangePassword',
   'checkForUpdates',
   'installUpdate'
 ] as const
@@ -71,6 +82,12 @@ api.onUpdate = (cb: (s: UpdateState) => void) => {
   const h = (_e: unknown, s: UpdateState): void => cb(s)
   ipcRenderer.on(IPC.update, h)
   return () => ipcRenderer.removeListener(IPC.update, h)
+}
+
+api.onAccount = (cb: (me: AccountMe | null) => void) => {
+  const h = (_e: unknown, me: AccountMe | null): void => cb(me)
+  ipcRenderer.on(IPC.account, h)
+  return () => ipcRenderer.removeListener(IPC.account, h)
 }
 
 contextBridge.exposeInMainWorld('api', api)

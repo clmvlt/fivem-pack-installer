@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
-import type { Overview, TaskProgress, UpdateState } from '@shared/types'
+import type { AccountMe, Overview, TaskProgress, UpdateState } from '@shared/types'
 import { q } from './lib/format'
 
 export interface Message {
@@ -13,6 +13,9 @@ interface Store {
   task: TaskProgress | null
   /** Mise à jour de l'application. */
   update: UpdateState | null
+  /** Compte connecté (null sans compte, undefined tant qu'il n'est pas chargé). */
+  account: AccountMe | null | undefined
+  setAccount: (me: AccountMe | null) => void
   message: Message | null
   setMessage: (m: Message | null) => void
   /** Appelle l'API ; une erreur s'affiche dans la barre de message. */
@@ -26,6 +29,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
   const [task, setTask] = useState<TaskProgress | null>(null)
   const [message, setMessage] = useState<Message | null>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [account, setAccount] = useState<AccountMe | null | undefined>(undefined)
   const lastTask = useRef<string | null>(null)
 
   const refresh = useCallback(async () => {
@@ -51,6 +55,8 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     void refresh()
     const offChanged = window.api.onChanged(() => void refresh())
     const offUpdate = window.api.onUpdate(setUpdate)
+    const offAccount = window.api.onAccount(setAccount)
+    window.api.accountGet().then(setAccount, () => setAccount(null))
     const offTask = window.api.onTask((p) => {
       if (!p.done) {
         // Nouvelle action : l'ancien message n'a plus lieu d'être.
@@ -74,6 +80,7 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
       offChanged()
       offTask()
       offUpdate()
+      offAccount()
       window.removeEventListener('keydown', onKey)
     }
   }, [refresh])
@@ -90,7 +97,10 @@ export function StoreProvider({ children }: { children: ReactNode }): ReactEleme
     if (overview?.accent) document.documentElement.style.setProperty('--accent', overview.accent)
   }, [overview?.accent])
 
-  const value = useMemo<Store>(() => ({ overview, refresh, task, update, message, setMessage, run }), [overview, refresh, task, update, message, run])
+  const value = useMemo<Store>(
+    () => ({ overview, refresh, task, update, account, setAccount, message, setMessage, run }),
+    [overview, refresh, task, update, account, message, run]
+  )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

@@ -60,12 +60,17 @@ function startApp(): void {
 
     // Images des packs : pm-media://pack/<id>/<chemin>, limité au dossier de la bibliothèque.
     // Images de la Marketplace : pm-media://market/<pack>/<image>[?size=thumb], mises en cache sur le disque.
+    // Photos des comptes : pm-media://avatar/<compte>/<version>, même cache.
     protocol.handle('pm-media', (req) => {
       const url = new URL(req.url)
       const parts = url.pathname.split('/').filter(Boolean).map((p) => decodeURIComponent(p))
       if (url.host === 'market') {
         if (parts.length !== 2) return new Response('Interdit', { status: 403 })
         return service.marketplace.image(parts[0], parts[1], url.searchParams.get('size') === 'thumb')
+      }
+      if (url.host === 'avatar') {
+        if (parts.length !== 2) return new Response('Interdit', { status: 403 })
+        return service.marketplace.avatar(parts[0], parts[1])
       }
       const lib = service.library.dir
       const file = path.resolve(lib, ...parts)

@@ -6,10 +6,12 @@ import { Cleanup } from './components/Cleanup'
 import { SettingsView } from './components/SettingsView'
 import { Graphics } from './components/Graphics'
 import { Marketplace } from './components/Marketplace'
+import { AccountView } from './components/AccountView'
+import { Avatar } from './components/common'
 import { UpdatePanel } from './components/UpdatePanel'
 import icon from './assets/icon.png'
 
-type Page = 'library' | 'market' | 'graphics' | 'cleanup' | 'settings'
+type Page = 'library' | 'market' | 'graphics' | 'cleanup' | 'account' | 'settings'
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'library', label: 'Bibliothèque' },
@@ -20,7 +22,7 @@ const NAV: { id: Page; label: string }[] = [
 ]
 
 export function App() {
-  const { overview, message, setMessage, run } = useStore()
+  const { overview, account, message, setMessage, run } = useStore()
   const [page, setPage] = useState<Page>('library')
   const [openPack, setOpenPack] = useState<string | null>(null)
   const [openMarket, setOpenMarket] = useState<string | null>(null)
@@ -106,6 +108,23 @@ export function App() {
               {gameProblem}
             </button>
           )}
+          {/* Compte : tout en bas de la barre latérale. */}
+          <button className={`nav side-account ${page === 'account' ? 'is-selected' : ''}`} onClick={() => go('account')}>
+            <span className="nav-account">
+              {account ? (
+                <Avatar url={account.avatarUrl} name={account.displayName} size={24} />
+              ) : (
+                <span className="avatar" style={{ width: 24, height: 24 }} aria-hidden>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <circle cx="8" cy="5" r="3" />
+                    <path d="M2 14.5c0-3 2.7-5 6-5s6 2 6 5z" />
+                  </svg>
+                </span>
+              )}
+              <span className="ellipsis">{account ? account.displayName : 'Compte'}</span>
+              {account?.mustChangePassword && <span className="nav-dot" title="Mot de passe à changer" />}
+            </span>
+          </button>
         </div>
       </aside>
 
@@ -114,6 +133,7 @@ export function App() {
         {page === 'market' && <Marketplace openId={openMarket} onOpen={setOpenMarket} onOpenLocal={openLocal} />}
         {page === 'graphics' && <Graphics />}
         {page === 'cleanup' && <Cleanup />}
+        {page === 'account' && <AccountView />}
         {page === 'settings' && <SettingsView />}
 
         {message && (
