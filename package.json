@@ -17,6 +17,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
+    "devprod": "set PM_API_URL=https://packs.dimzou.fr/api&& electron-vite dev",
     "start": "electron-vite build && electron .",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
