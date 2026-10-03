@@ -5,7 +5,7 @@ import path from 'node:path'
 import { app, BrowserWindow, dialog, Menu, nativeImage, net, safeStorage, shell, systemPreferences } from 'electron'
 import type { AppState, GamesInfo, Overview, PackPatch, RootId, Settings, TaskProgress } from '@shared/types'
 import type { AccountMe, ProfileInput } from '@shared/types'
-import type { ComponentFile, ForeignSelection, MarketQuery, PackManagerApi } from '@shared/api'
+import type { AuthorQuery, ComponentFile, ForeignSelection, MarketQuery, PackManagerApi } from '@shared/api'
 import { IPC } from '@shared/api'
 import { detectGames, inspectFiveM, inspectGta, normalizeFiveMPath } from './core/games'
 import { Installer, type Report } from './core/installer'
@@ -506,6 +506,8 @@ export class Service {
         return result
       })
     },
+
+    marketAuthors: (query: AuthorQuery) => this.marketplace.authors(query),
 
     marketAuthor: (slugOrId: string) => this.marketplace.author(slugOrId),
 

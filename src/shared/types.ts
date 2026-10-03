@@ -356,6 +356,20 @@ export interface ProfileLink {
   url: string
 }
 
+/** Auteur dans la liste des auteurs de la Marketplace. */
+export interface AuthorSummary extends AuthorRef {
+  packCount: number
+  /** Total affiché des téléchargements de ses packs. */
+  downloads: number
+}
+
+export interface AuthorPage {
+  items: AuthorSummary[]
+  page: number
+  total: number
+  totalPages: number
+}
+
 /** Page publique d'un auteur. Ses packs : marketList({ author: slug }). */
 export interface AuthorProfile extends AuthorRef {
   bio: string

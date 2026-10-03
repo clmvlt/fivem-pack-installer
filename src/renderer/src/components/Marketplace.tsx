@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import type { AuthorProfile, MarketPack, MarketPackDetail, MarketPage, MarketTag, PackManifest, TaskProgress } from '@shared/types'
+import type { AuthorProfile, AuthorSummary, MarketPack, MarketPackDetail, MarketPage, MarketTag, PackManifest, TaskProgress } from '@shared/types'
 import type { MarketQuery } from '@shared/api'
 import { cleanError, useStore } from '../store'
 import { bytes, marketImageUrl } from '../lib/format'
@@ -28,8 +28,10 @@ export function Marketplace({
   depth,
   onOpen,
   onBack,
-  onOpenLocal
-}: Nav & { view: MarketView | null; depth: number; onBack: () => void }) {
+  onOpenLocal,
+  author,
+  onAuthor
+}: Nav & { view: MarketView | null; depth: number; onBack: () => void; author: string | null; onAuthor: (slug: string | null) => void }) {
   // Retour : à la liste depuis la première vue ouverte, sinon à la vue précédente (fiche ou auteur).
   const back = (
     <div className="back-row">
@@ -40,7 +42,54 @@ export function Marketplace({
   )
   if (view?.kind === 'pack') return <MarketDetail key={view.id} id={view.id} back={back} onOpen={onOpen} onOpenLocal={onOpenLocal} />
   if (view?.kind === 'author') return <AuthorView key={view.slug} slug={view.slug} back={back} onOpen={onOpen} onOpenLocal={onOpenLocal} />
-  return <MarketList onOpen={onOpen} onOpenLocal={onOpenLocal} />
+  return <MarketList author={author} onAuthor={onAuthor} onOpen={onOpen} onOpenLocal={onOpenLocal} />
+}
+
+/**
+ * Rangée « Tous les packs » puis un rond par auteur (photo, nom en dessous) : un auteur choisi n'affiche que ses packs.
+ * Absente tant qu'aucun pack n'est rattaché à un compte.
+ */
+function AuthorStrip({ authors, author, onAuthor }: { authors: AuthorSummary[]; author: string | null; onAuthor: (slug: string | null) => void }) {
+  if (!authors.length) return null
+  return (
+    <div className="author-strip" role="tablist" aria-label="Auteurs">
+      <button role="tab" aria-selected={!author} className={`author-chip ${author ? '' : 'is-selected'}`} onClick={() => onAuthor(null)}>
+        <span className="avatar author-all" aria-hidden>
+          <svg width="26" height="26" viewBox="0 0 16 16" fill="currentColor">
+            <rect x="1.5" y="1.5" width="5.5" height="5.5" rx="1.2" />
+            <rect x="9" y="1.5" width="5.5" height="5.5" rx="1.2" />
+            <rect x="1.5" y="9" width="5.5" height="5.5" rx="1.2" />
+            <rect x="9" y="9" width="5.5" height="5.5" rx="1.2" />
+          </svg>
+        </span>
+        <span className="author-chip-name">Tous les packs</span>
+      </button>
+      {authors.map((a) => (
+        <button
+          key={a.id}
+          role="tab"
+          aria-selected={author === a.slug}
+          className={`author-chip ${author === a.slug ? 'is-selected' : ''}`}
+          title={`${a.displayName} : ${plural(a.packCount, 'pack', 'packs')}`}
+          onClick={() => onAuthor(author === a.slug ? null : a.slug)}
+        >
+          <Avatar url={a.avatarUrl} name={a.displayName} size={64} />
+          <span className="author-chip-name">{a.displayName}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Recherche lancée 300 ms après la dernière frappe. */
+function useSearch(current: string | undefined, apply: (q: string) => void): [string, (q: string) => void] {
+  const [search, setSearch] = useState(current ?? '')
+  useEffect(() => {
+    if (search === (current ?? '')) return
+    const t = setTimeout(() => apply(search), 300)
+    return () => clearTimeout(t)
+  }, [search, current, apply])
+  return [search, setSearch]
 }
 
 /** Page de packs de l'API pour une recherche. */
@@ -69,25 +118,31 @@ function useMarketPage(query: MarketQuery): { page: MarketPage | null; error: st
   return { page, error, loading, reload: () => void load() }
 }
 
-function MarketList({ onOpen, onOpenLocal }: Nav) {
+function MarketList({ author, onAuthor, onOpen, onOpenLocal }: Nav & { author: string | null; onAuthor: (slug: string | null) => void }) {
   const { overview } = useStore()
   const [query, setQuery] = useState<MarketQuery>({ sort: 'recent', page: 0 })
-  const [search, setSearch] = useState('')
   const [tags, setTags] = useState<MarketTag[]>([])
-  const { page, error, loading, reload } = useMarketPage(query)
+  const [authors, setAuthors] = useState<AuthorSummary[]>([])
+  const { page, error, loading, reload } = useMarketPage({ ...query, author: author ?? undefined })
+  const [search, setSearch] = useSearch(
+    query.q,
+    useCallback((q: string) => setQuery((old) => ({ ...old, q, page: 0 })), [])
+  )
 
   useEffect(() => {
     window.api.marketTags().then(setTags, () => setTags([]))
+    window.api.marketAuthors({ sort: 'popular' }).then(
+      (p) => setAuthors(p.items),
+      () => setAuthors([])
+    )
   }, [])
 
-  // Recherche lancée 300 ms après la dernière frappe.
-  useEffect(() => {
-    if (search === (query.q ?? '')) return
-    const t = setTimeout(() => setQuery((q) => ({ ...q, q: search, page: 0 })), 300)
-    return () => clearTimeout(t)
-  }, [search, query.q])
-
   if (!overview) return null
+  const selected = authors.find((a) => a.slug === author) ?? null
+  const chooseAuthor = (slug: string | null): void => {
+    setQuery((q) => ({ ...q, page: 0 }))
+    onAuthor(slug)
+  }
 
   return (
     <div className="page">
@@ -102,6 +157,15 @@ function MarketList({ onOpen, onOpenLocal }: Nav) {
           <option value="name">Nom</option>
         </select>
       </header>
+      <AuthorStrip authors={authors} author={author} onAuthor={chooseAuthor} />
+      {selected && (
+        <div className="author-filter">
+          <span className="muted">Packs de {selected.displayName}</span>
+          <button className="link" onClick={() => onOpen({ kind: 'author', slug: selected.slug })}>
+            Voir sa page ›
+          </button>
+        </div>
+      )}
 
       {tags.length > 1 && (
         <div className="chips">
@@ -123,7 +187,7 @@ function MarketList({ onOpen, onOpenLocal }: Nav) {
         reload={reload}
         current={query.page ?? 0}
         onPage={(p) => setQuery({ ...query, page: p })}
-        empty={query.q || query.tag ? 'Aucun pack ne correspond à cette recherche.' : 'Aucun pack publié pour le moment.'}
+        empty={query.q || query.tag ? 'Aucun pack ne correspond à cette recherche.' : author ? 'Aucun pack publié par cet auteur.' : 'Aucun pack publié pour le moment.'}
         onOpen={onOpen}
         onOpenLocal={onOpenLocal}
       />

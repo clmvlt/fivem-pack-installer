@@ -27,6 +27,8 @@ export function App() {
   const [openPack, setOpenPack] = useState<string | null>(null)
   // Vues ouvertes dans la Marketplace (fiche, auteur...), la dernière affichée.
   const [marketStack, setMarketStack] = useState<MarketView[]>([])
+  // Auteur choisi au-dessus de la liste des packs (null : tous les packs).
+  const [marketAuthor, setMarketAuthor] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
 
   // Glisser-déposer d'archives (ou de dossiers) n'importe où dans la fenêtre.
@@ -142,6 +144,8 @@ export function App() {
             onOpen={(v) => setMarketStack((s) => [...s, v])}
             onBack={() => setMarketStack((s) => s.slice(0, -1))}
             onOpenLocal={openLocal}
+            author={marketAuthor}
+            onAuthor={setMarketAuthor}
           />
         )}
         {page === 'graphics' && <Graphics />}

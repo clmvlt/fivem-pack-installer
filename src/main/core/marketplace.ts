@@ -15,8 +15,8 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { pathToFileURL } from 'node:url'
 import { net } from 'electron'
-import type { AuthorProfile, MarketPack, MarketPackDetail, MarketPage, MarketTag, ProfileLink } from '@shared/types'
-import type { MarketQuery } from '@shared/api'
+import type { AuthorPage, AuthorProfile, MarketPack, MarketPackDetail, MarketPage, MarketTag, ProfileLink } from '@shared/types'
+import type { AuthorQuery, MarketQuery } from '@shared/api'
 import { toAuthorRef } from './account'
 import type { Report } from './installer'
 import type { ImportProgress, Library, StoredManifest } from './library'
@@ -66,6 +66,13 @@ interface RemoteAuthor extends RemoteAuthorRef {
   createdAt: string | null
   packCount: number
   downloads: number
+}
+
+interface RemoteAuthorPage {
+  items: (RemoteAuthorRef & { packCount: number; downloads: number })[]
+  page: number
+  total: number
+  totalPages: number
 }
 
 interface RemoteDetail extends RemoteSummary {
@@ -213,6 +220,19 @@ export class Marketplace {
     const r = await this.get<RemoteDetail>(`/packs/${encodeURIComponent(idOrSlug)}`)
     this.catalog.set(r.id, r)
     return r
+  }
+
+  /** Auteurs ayant au moins un pack publié. */
+  async authors(query: AuthorQuery): Promise<AuthorPage> {
+    const params = new URLSearchParams({ page: String(query.page ?? 0), size: '24', sort: query.sort ?? 'popular' })
+    if (query.q?.trim()) params.set('q', query.q.trim())
+    const r = await this.get<RemoteAuthorPage>(`/authors?${params}`)
+    return {
+      items: r.items.map((a) => ({ ...toAuthorRef(a), packCount: a.packCount ?? 0, downloads: a.downloads ?? 0 })),
+      page: r.page,
+      total: r.total,
+      totalPages: r.totalPages
+    }
   }
 
   /** Page publique d'un auteur. */

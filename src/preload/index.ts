@@ -48,6 +48,7 @@ const methods = [
   'marketTags',
   'marketDetail',
   'marketInstall',
+  'marketAuthors',
   'marketAuthor',
   'openSite',
   'openLink',

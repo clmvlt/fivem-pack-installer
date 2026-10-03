@@ -1347,6 +1347,64 @@ button.google {
   gap: 6px;
 }
 
+/* Auteurs au-dessus de la liste des packs : un rond par auteur, son nom en dessous */
+.author-strip {
+  display: flex;
+  gap: 8px;
+  margin: -4px -8px 16px;
+  padding: 4px 8px 6px;
+  overflow-x: auto;
+}
+.author-chip {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 96px;
+  height: auto;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+.author-chip:hover:not(:disabled) {
+  background: var(--hover);
+}
+.author-chip .avatar {
+  width: 64px;
+  height: 64px;
+  box-shadow: 0 0 0 2px var(--layer), 0 0 0 3px var(--border);
+  transition: box-shadow 0.15s;
+}
+.author-chip.is-selected .avatar {
+  box-shadow: 0 0 0 2px var(--layer), 0 0 0 4px var(--accent);
+}
+.author-all {
+  background: var(--surface);
+  color: var(--text-2);
+}
+.author-chip.is-selected .author-all {
+  color: var(--accent-text);
+}
+.author-chip-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.author-chip.is-selected .author-chip-name {
+  font-weight: 600;
+}
+.author-filter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -6px 0 16px;
+}
+
 .author-head {
   display: flex;
   align-items: center;
