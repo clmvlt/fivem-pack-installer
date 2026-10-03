@@ -1,11 +1,11 @@
 {
   "name": "fivem-pack-manager",
   "productName": "FiveM Pack Manager",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Bibliothèque et installateur de packs graphiques pour FiveM / GTA V (ENB, ReShade, NVE, QuantV, mods .rpf).",
   "author": "clementveillet",
   "license": "MIT",
-  "homepage": "https://packs.dimzou.fr/application",
+  "homepage": "https://reflect-fivem.com/application",
   "repository": {
     "type": "git",
     "url": "https://github.com/clmvlt/fivem-pack-installer.git"
@@ -17,7 +17,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
-    "devprod": "set PM_API_URL=https://packs.dimzou.fr/api&& electron-vite dev",
+    "devprod": "set PM_API_URL=https://reflect-fivem.com/api&& electron-vite dev",
     "start": "electron-vite build && electron .",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
