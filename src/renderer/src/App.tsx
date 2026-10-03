@@ -110,7 +110,9 @@ export function App() {
       <aside className="sidebar">
         <div className="brand">
           <img src={icon} alt="" />
-          <span>FiveM Pack Manager</span>
+          <span>
+            Reflect <span className="brand-sub">FiveM</span>
+          </span>
         </div>
         <nav>
           {NAV.map((n) => (

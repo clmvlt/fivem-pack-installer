@@ -113,7 +113,7 @@ export function avatarMediaUrl(apiPath: string | null | undefined): string | nul
 }
 
 export function deviceName(): string {
-  return `FiveM Pack Manager — ${os.hostname()}`.slice(0, 80)
+  return `Reflect FiveM — ${os.hostname()}`.slice(0, 80)
 }
 
 // ------------------------------------------------------------------ réponses de l'API
@@ -468,7 +468,7 @@ export function waitForLoopback(
       const result = parseLoopbackCallback(req.url, state)
       switch (result.type) {
         case 'code':
-          reply(res, 200, PAGE('Connexion réussie', 'Vous pouvez fermer cet onglet et revenir à FiveM Pack Manager.'))
+          reply(res, 200, PAGE('Connexion réussie', 'Vous pouvez fermer cet onglet et revenir à Reflect FiveM.'))
           finish(null, result.code)
           break
         case 'error':
@@ -476,7 +476,7 @@ export function waitForLoopback(
           finish(new Error('Connexion annulée.'))
           break
         case 'invalid':
-          reply(res, 400, PAGE('Requête invalide', 'Relancez la connexion depuis FiveM Pack Manager.'))
+          reply(res, 400, PAGE('Requête invalide', 'Relancez la connexion depuis Reflect FiveM.'))
           break
         default:
           res.writeHead(404, { Connection: 'close' })

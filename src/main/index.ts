@@ -231,7 +231,7 @@ function createWindow(boundsFile: string): BrowserWindow {
     minHeight: 420,
     show: false,
     backgroundColor: windowBackground(),
-    title: 'FiveM Pack Manager',
+    title: 'Reflect FiveM',
     icon: path.join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publication d'une nouvelle version de l'application (FiveM Pack Manager).
+"""Publication d'une nouvelle version de l'application (Reflect FiveM).
 
     python deploy/deploy.py                  build, signature, envoi et publication (production)
     python deploy/deploy.py --no-build       publie les fichiers déjà présents dans release/ (build fait ailleurs)
@@ -455,7 +455,7 @@ def check(cfg: Config, args: argparse.Namespace) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Publie une nouvelle version de FiveM Pack Manager.")
+    parser = argparse.ArgumentParser(description="Publie une nouvelle version de Reflect FiveM.")
     parser.add_argument("--check", action="store_true", help="vérifie sans rien modifier")
     parser.add_argument("--dev", action="store_true", help="API de dev au lieu de la production")
     parser.add_argument("--no-build", action="store_true", help="utilise les fichiers déjà présents dans release/")

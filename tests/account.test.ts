@@ -225,7 +225,7 @@ describe('compte', () => {
     const me = await account.login(' joueur@example.com ', 'motdepasse')
     expect(me.avatarUrl).toBe('pm-media://avatar/12/3f2a9c1e-77aa-4b1b-8a7e-0c2d8a9b1f00')
     expect(changes).toEqual([me])
-    expect(JSON.parse(calls[0].init.body as string)).toMatchObject({ login: 'joueur@example.com', password: 'motdepasse', deviceName: expect.stringMatching(/^FiveM Pack Manager — /) })
+    expect(JSON.parse(calls[0].init.body as string)).toMatchObject({ login: 'joueur@example.com', password: 'motdepasse', deviceName: expect.stringMatching(/^Reflect FiveM — /) })
     expect(existsSync(file)).toBe(true)
 
     await account.profile()

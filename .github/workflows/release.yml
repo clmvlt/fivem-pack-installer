@@ -94,7 +94,7 @@ jobs:
       - name: Release GitHub
         uses: softprops/action-gh-release@v3
         with:
-          name: FiveM Pack Manager ${{ env.VERSION }}
+          name: Reflect FiveM ${{ env.VERSION }}
           body_path: ${{ env.NOTES_FILE }}
           files: |
             release/FiveM-Pack-Manager-Setup-${{ env.VERSION }}.exe

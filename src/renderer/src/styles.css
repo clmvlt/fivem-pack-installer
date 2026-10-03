@@ -1,8 +1,9 @@
-/* Apparence de lanceur sobre, dans l'esprit de Windows 11 : couleurs système, police système, aucun effet décoratif. */
+/* Apparence de lanceur sobre, dans l'esprit de Windows 11 : police système, aucun effet décoratif, et pour accent le
+   violet du logo de Reflect FiveM. */
 
 :root {
   color-scheme: light dark;
-  --accent: #0067c0;
+  --accent: #7c40fd;
   --bg: #f3f3f3;
   --layer: #f9f9f9;
   --surface: #ffffff;
@@ -130,6 +131,11 @@ h2 {
   gap: 10px;
   padding: 4px 8px 16px;
   font-weight: 600;
+}
+/* « Reflect FiveM », comme dans le logo : « FiveM » plus discret. */
+.brand-sub {
+  color: var(--text-2);
+  font-weight: 400;
 }
 .brand img {
   width: 24px;

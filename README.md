@@ -1,8 +1,10 @@
-# FiveM Pack Manager
+# Reflect FiveM
 
 [![CI](https://github.com/clmvlt/fivem-pack-installer/actions/workflows/ci.yml/badge.svg)](https://github.com/clmvlt/fivem-pack-installer/actions/workflows/ci.yml)
 
 Installer, changer et retirer des packs graphiques FiveM (NVE, QuantV, ENB, ReShade, mods `.rpf`) sans déplacer de fichiers à la main.
+
+Anciennement « FiveM Pack Manager ». L'exécutable, l'installateur, le dossier de données (`%LOCALAPPDATA%\FiveM Pack Manager\`) et les liens `fivem-pack-manager://` gardent ce nom : les mises à jour automatiques et les bibliothèques déjà installées continuent de fonctionner.
 
 **Télécharger** : [dernière version sur GitHub](https://github.com/clmvlt/fivem-pack-installer/releases/latest) (installateur ou version portable), aussi accessible depuis [packs.dimzou.fr/application](https://packs.dimzou.fr/application).
 
@@ -54,7 +56,7 @@ Le compte est facultatif. Sans compte, aucune donnée personnelle n'est envoyée
 
 L'application ne communique qu'avec packs.dimzou.fr : peu après le démarrage puis toutes les heures pour chercher une mise à jour (sans identifiant), à l'ouverture de la Marketplace pour lister les packs et les pages d'auteurs, et quand vous téléchargez un pack ou une mise à jour. Comme pour tout site web, le serveur reçoit l'adresse IP de ces requêtes. `PM_NO_UPDATE=1` désactive la recherche de mises à jour.
 
-Avec un compte, le serveur garde votre adresse e-mail, votre nom public, votre description, vos liens et votre photo, ainsi que le nom de l'appareil connecté (« FiveM Pack Manager — <nom du PC> »), affiché dans la liste de vos connexions. Le jeton de connexion est gardé chiffré sur le PC (voir « Données ») et n'est envoyé qu'au serveur, pour les actions liées au compte : vérification du compte au démarrage, profil, photo, mot de passe, déconnexion. Il n'est jamais écrit dans les journaux. Les téléchargements et les recherches dans la Marketplace se font sans le jeton. Avec Google, l'application ne voit ni votre mot de passe Google ni le secret de l'application Google : elle reçoit seulement un code à usage unique, échangé par le serveur.
+Avec un compte, le serveur garde votre adresse e-mail, votre nom public, votre description, vos liens et votre photo, ainsi que le nom de l'appareil connecté (« Reflect FiveM — <nom du PC> »), affiché dans la liste de vos connexions. Le jeton de connexion est gardé chiffré sur le PC (voir « Données ») et n'est envoyé qu'au serveur, pour les actions liées au compte : vérification du compte au démarrage, profil, photo, mot de passe, déconnexion. Il n'est jamais écrit dans les journaux. Les téléchargements et les recherches dans la Marketplace se font sans le jeton. Avec Google, l'application ne voit ni votre mot de passe Google ni le secret de l'application Google : elle reçoit seulement un code à usage unique, échangé par le serveur.
 
 ## Développement
 
