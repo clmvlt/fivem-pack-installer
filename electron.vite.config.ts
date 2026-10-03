@@ -15,6 +15,8 @@ export default defineConfig({
   },
   renderer: {
     resolve: { alias: { '@shared': shared } },
-    plugins: [react()]
+    plugins: [react()],
+    // Code de l'interface réduit : moins de JavaScript à lire au démarrage.
+    build: { minify: true }
   }
 })
