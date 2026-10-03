@@ -9,7 +9,7 @@
     python deploy/deploy.py --check          vérifie clé, fichiers, API et connexion, sans rien modifier
 
 Étapes :
-  1. npm run dist : installateur release/FiveM-Pack-Manager-Setup-X.Y.Z.exe et version portable ;
+  1. npm run dist : installateur release/Reflect-FiveM-Setup-X.Y.Z.exe et version portable ;
   2. signature de chaque fichier avec la clé de publication (scripts/sign-release.mjs, clé privée locale) ;
   3. API : connexion au compte d'administration, création de la version X.Y.Z (numéro de package.json),
      envoi des fichiers en morceaux (reprise après coupure), signatures, publication ;
@@ -155,7 +155,7 @@ class Api:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
         self.http = requests.Session()
-        self.http.headers["User-Agent"] = "fivem-pack-manager-deploy"
+        self.http.headers["User-Agent"] = "reflect-fivem-deploy"
 
     def _xsrf(self) -> dict[str, str]:
         token = next((c.value for c in self.http.cookies if c.name == "XSRF-TOKEN"), None)
@@ -319,8 +319,8 @@ def build() -> None:
 def release_files(version: str, setup: str | None, portable: str | None) -> dict[str, Path]:
     files: dict[str, Path] = {}
     candidates = {
-        "setup": Path(setup) if setup else RELEASE_DIR / f"FiveM-Pack-Manager-Setup-{version}.exe",
-        "portable": Path(portable) if portable else RELEASE_DIR / f"FiveM-Pack-Manager-Portable-{version}.exe",
+        "setup": Path(setup) if setup else RELEASE_DIR / f"Reflect-FiveM-Setup-{version}.exe",
+        "portable": Path(portable) if portable else RELEASE_DIR / f"Reflect-FiveM-Portable-{version}.exe",
     }
     for kind, path in candidates.items():
         if path.is_file():
@@ -463,7 +463,7 @@ def main() -> int:
     parser.add_argument("--notes", help="nouveautés (Markdown)")
     parser.add_argument("--notes-file", help="fichier Markdown des nouveautés")
     parser.add_argument("--version", help="numéro de version (par défaut celui de package.json)")
-    parser.add_argument("--setup", help="chemin de l'installateur (par défaut release/FiveM-Pack-Manager-Setup-X.Y.Z.exe)")
+    parser.add_argument("--setup", help="chemin de l'installateur (par défaut release/Reflect-FiveM-Setup-X.Y.Z.exe)")
     parser.add_argument("--portable", help="chemin de la version portable")
     args = parser.parse_args()
     try:

@@ -24,7 +24,7 @@ async function sandbox(): Promise<{ dir: string; target: string; source: string;
   const dir = mkdtempSync(path.join(os.tmpdir(), 'pm swap '))
   dirs.push(dir)
   // Chemin avec espaces, apostrophe, accents et esperluette.
-  const target = path.join(dir, "Jeux d'été & mods", 'FiveM-Pack-Manager-Portable.exe')
+  const target = path.join(dir, "Jeux d'été & mods", 'Reflect-FiveM-Portable.exe')
   mkdirSync(path.dirname(target), { recursive: true })
   writeFileSync(target, 'ancienne version')
   const source = path.join(dir, 'nouvelle.exe')

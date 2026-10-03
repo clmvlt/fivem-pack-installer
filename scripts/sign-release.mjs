@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Signe un fichier de version (installateur ou version portable) avec la clé privée de publication.
 //
-//   node scripts/sign-release.mjs release/FiveM-Pack-Manager-Setup-1.3.0.exe
+//   node scripts/sign-release.mjs release/Reflect-FiveM-Setup-1.3.0.exe
 //   node scripts/sign-release.mjs <fichier.exe> --version 1.3.0 --key C:\chemin\cle.pem
 //
 // La signature (base64) est affichée et écrite à côté du fichier (<fichier>.sig) : copiez-la dans

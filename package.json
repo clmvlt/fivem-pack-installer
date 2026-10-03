@@ -1,6 +1,6 @@
 {
-  "name": "fivem-pack-manager",
-  "productName": "FiveM Pack Manager",
+  "name": "reflect-fivem",
+  "productName": "Reflect FiveM",
   "version": "1.8.1",
   "description": "Bibliothèque et installateur de packs graphiques pour FiveM / GTA V (ENB, ReShade, NVE, QuantV, mods .rpf).",
   "author": "clementveillet",

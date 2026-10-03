@@ -14,7 +14,7 @@ const isElevatedWorker = process.argv.some((a) => a.startsWith(EXEC_FLAG))
 
 if (isElevatedWorker) {
   // Processus administrateur éphémère : exécute un plan puis quitte, sans fenêtre.
-  app.setPath('userData', path.join(os.tmpdir(), 'fivem-pack-manager-elevated'))
+  app.setPath('userData', path.join(os.tmpdir(), 'reflect-fivem-elevated'))
   app.disableHardwareAcceleration()
   void app.whenReady().then(async () => {
     const code = await runElevatedWorker(process.argv)

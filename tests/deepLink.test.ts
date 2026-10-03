@@ -6,7 +6,7 @@ const ID = '3f2b8c1e-9a4d-4e6f-b1c2-7d8e9f0a1b2c'
 
 describe('findDeepLink', () => {
   it('trouve le lien dans la ligne de commande', () => {
-    expect(findDeepLink(['C:\app\FiveM Pack Manager.exe', `fivem-pack-manager://pack/${ID}`])).toBe(`fivem-pack-manager://pack/${ID}`)
+    expect(findDeepLink(['C:\app\Reflect FiveM.exe', `fivem-pack-manager://pack/${ID}`])).toBe(`fivem-pack-manager://pack/${ID}`)
     // second-instance : Chromium ajoute ses propres options avant le lien.
     expect(findDeepLink(['electron.exe', '--allow-file-access-from-files', 'D:\app', `FIVEM-PACK-MANAGER://pack/${ID}`])).toBe(
       `FIVEM-PACK-MANAGER://pack/${ID}`

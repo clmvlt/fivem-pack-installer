@@ -88,8 +88,8 @@ jobs:
       - name: Signatures
         if: env.HAS_SIGNING_KEY == 'true'
         run: |
-          node scripts/sign-release.mjs release/FiveM-Pack-Manager-Setup-${{ env.VERSION }}.exe
-          node scripts/sign-release.mjs release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
+          node scripts/sign-release.mjs release/Reflect-FiveM-Setup-${{ env.VERSION }}.exe
+          node scripts/sign-release.mjs release/Reflect-FiveM-Portable-${{ env.VERSION }}.exe
 
       - name: Release GitHub
         uses: softprops/action-gh-release@v3
@@ -97,8 +97,8 @@ jobs:
           name: Reflect FiveM ${{ env.VERSION }}
           body_path: ${{ env.NOTES_FILE }}
           files: |
-            release/FiveM-Pack-Manager-Setup-${{ env.VERSION }}.exe
-            release/FiveM-Pack-Manager-Portable-${{ env.VERSION }}.exe
+            release/Reflect-FiveM-Setup-${{ env.VERSION }}.exe
+            release/Reflect-FiveM-Portable-${{ env.VERSION }}.exe
             release/*.sig
 
       - name: Mise en ligne sur reflect-fivem.com

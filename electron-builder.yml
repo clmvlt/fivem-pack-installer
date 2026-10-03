@@ -1,5 +1,7 @@
+# appId inchangé depuis l'ancien nom (FiveM Pack Manager) : il identifie l'installation pour les mises à jour
+# (clé de désinstallation, épinglages).
 appId: fr.fivem.packmanager
-productName: FiveM Pack Manager
+productName: Reflect FiveM
 directories:
   output: release
   buildResources: resources
@@ -9,9 +11,10 @@ files:
   - '!packs/**'
   - '!node_modules/7zip-bin/{mac,linux}/**'
   - '!node_modules/7zip-bin/win/{ia32,arm64}/**'
-# Liens « fivem-pack-manager://pack/<id> » du site (« Installer via l'app »), enregistrés par l'installateur.
+# Liens « fivem-pack-manager://pack/<id> » du site (« Installer via l'app »), enregistrés par l'installateur. Le
+# schéma garde l'ancien nom : le site l'utilise pour toutes les versions installées.
 protocols:
-  - name: FiveM Pack Manager
+  - name: Reflect FiveM
     schemes: [fivem-pack-manager]
 asarUnpack:
   - node_modules/7zip-bin/**
@@ -28,9 +31,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
-  artifactName: FiveM-Pack-Manager-Setup-${version}.${ext}
+  artifactName: Reflect-FiveM-Setup-${version}.${ext}
 portable:
-  artifactName: FiveM-Pack-Manager-Portable-${version}.${ext}
+  artifactName: Reflect-FiveM-Portable-${version}.${ext}
 # Génère resources/app-update.yml, lu par electron-updater. Les fichiers sont publiés à la main dans
 # l'administration du site (Versions de l'app), après signature (scripts/sign-release.mjs).
 publish:

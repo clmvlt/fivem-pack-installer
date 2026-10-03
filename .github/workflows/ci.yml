@@ -40,7 +40,7 @@ jobs:
       - name: Artefacts
         uses: actions/upload-artifact@v7
         with:
-          name: fivem-pack-manager-${{ github.sha }}
+          name: reflect-fivem-${{ github.sha }}
           path: |
             release/*.exe
           if-no-files-found: error

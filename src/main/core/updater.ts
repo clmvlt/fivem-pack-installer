@@ -69,6 +69,12 @@ export class AppUpdater {
     }
     // Ancienne version portable restée à côté (un .exe en cours d'exécution se renomme mais ne se supprime pas).
     if (this.mode === 'portable') void fs.rm(`${process.env.PORTABLE_EXECUTABLE_FILE}.old`, { force: true }).catch(() => undefined)
+    // Cache d'electron-updater de l'ancien nom (FiveM Pack Manager) : l'installateur de la mise à jour vers le nouveau
+    // nom y est resté. Plus tard qu'au démarrage : juste après la mise à jour, il peut encore être en train de se fermer.
+    if (this.mode === 'installer' && process.env.LOCALAPPDATA) {
+      const oldCache = path.join(process.env.LOCALAPPDATA, 'fivem-pack-manager-updater')
+      setTimeout(() => void fs.rm(oldCache, { recursive: true, force: true }).catch(() => undefined), FIRST_CHECK)
+    }
     // Installation de la version vérifiée à la fermeture de l'application.
     app.once('quit', (_event, exitCode) => {
       if (exitCode === 0) this.installOnQuit(false)
@@ -195,7 +201,7 @@ export class AppUpdater {
   }
 
   private async downloadPortable(release: RemoteRelease, file: RemoteFile): Promise<void> {
-    const workDir = path.join(app.getPath('temp'), 'FiveM Pack Manager', 'mise-a-jour')
+    const workDir = path.join(app.getPath('temp'), 'Reflect FiveM', 'mise-a-jour')
     const target = path.join(workDir, `${release.version}-${file.fileName}`)
     this.set({ status: 'downloading', version: release.version, notes: release.notes, percent: 0, transferred: 0, total: file.size, checkedAt: now() })
     try {
